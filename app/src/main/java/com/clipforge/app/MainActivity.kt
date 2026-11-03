@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +28,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val Ink = Color(0xFF0B0C12)
 private val Panel = Color(0xFF171925)
@@ -54,7 +59,12 @@ private fun ClipForgeHome() {
     var endSeconds by remember { mutableFloatStateOf(15f) }
     var status by remember { mutableStateOf("Choose a video to begin.") }
     var exporting by remember { mutableStateOf(false) }
+    var modelReady by remember { mutableStateOf(WhisperModelManager.isModelAvailable(androidx.compose.ui.platform.LocalContext.current)) }
+    var modelDownloading by remember { mutableStateOf(false) }
+    var modelProgress by remember { mutableFloatStateOf(0f) }
+    var modelStatus by remember { mutableStateOf("Download the offline speech model to prepare AI features.") }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         selectedVideo = uri
@@ -81,7 +91,7 @@ private fun ClipForgeHome() {
 
     Surface(modifier = Modifier.fillMaxSize(), color = Ink) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp),
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -103,6 +113,55 @@ private fun ClipForgeHome() {
                         Icon(Icons.Default.FolderOpen, contentDescription = null)
                         Text("  Choose a video")
                     }
+                }
+            }
+
+
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("OFFLINE AI MODEL", color = Violet, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.3.sp)
+                    Text(WhisperModelManager.MODEL_NAME, color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "About 78 MB · downloaded once · stays on this device",
+                        color = Color(0xFF9B9EAE),
+                        fontSize = 12.sp
+                    )
+                    if (modelDownloading) {
+                        LinearProgressIndicator(progress = modelProgress, modifier = Modifier.fillMaxWidth())
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                modelDownloading = true
+                                modelProgress = 0f
+                                modelStatus = "Downloading and verifying model…"
+                                try {
+                                    WhisperModelManager.ensureModel(context) { downloaded, total ->
+                                        withContext(Dispatchers.Main) {
+                                            modelProgress = (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+                                        }
+                                    }
+                                    modelReady = true
+                                    modelStatus = "Model verified. Video transcription is the next AI milestone."
+                                } catch (error: Exception) {
+                                    modelStatus = error.localizedMessage ?: "Model download failed. Please try again."
+                                } finally {
+                                    modelDownloading = false
+                                }
+                            }
+                        },
+                        enabled = !modelDownloading && !modelReady,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            when {
+                                modelDownloading -> "Downloading…"
+                                modelReady -> "Model downloaded"
+                                else -> "Download offline AI model"
+                            }
+                        )
+                    }
+                    Text(modelStatus, color = Color(0xFFB6B8C5), fontSize = 12.sp)
                 }
             }
 
@@ -148,7 +207,7 @@ private fun ClipForgeHome() {
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Violet, modifier = Modifier.size(16.dp))
