@@ -64,10 +64,15 @@ private fun ClipForgeHome() {
     var modelDownloading by remember { mutableStateOf(false) }
     var modelProgress by remember { mutableFloatStateOf(0f) }
     var modelStatus by remember { mutableStateOf("Download the offline speech model to prepare AI features.") }
+    var transcribing by remember { mutableStateOf(false) }
+    var transcriptionStatus by remember { mutableStateOf("Select a video and download the model to create a transcript.") }
+    var transcript by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         selectedVideo = uri
+        transcript = emptyList()
+        transcriptionStatus = "Ready to transcribe when the model is available."
         durationMs = 0L
         startSeconds = 0f
         endSeconds = 15f
@@ -142,7 +147,7 @@ private fun ClipForgeHome() {
                                         }
                                     }
                                     modelReady = true
-                                    modelStatus = "Model verified. Video transcription is the next AI milestone."
+                                    modelStatus = "Model verified and ready for offline transcription."
                                 } catch (error: Exception) {
                                     modelStatus = error.localizedMessage ?: "Model download failed. Please try again."
                                 } finally {
@@ -162,6 +167,74 @@ private fun ClipForgeHome() {
                         )
                     }
                     Text(modelStatus, color = Color(0xFFB6B8C5), fontSize = 12.sp)
+                }
+            }
+
+
+            if (selectedVideo != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("OFFLINE TRANSCRIPTION", color = Violet, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.3.sp)
+                        Text("Turn this video's speech into timestamped text.", color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Button(
+                            onClick = {
+                                val source = selectedVideo
+                                if (source != null) {
+                                    scope.launch {
+                                        transcribing = true
+                                        transcript = emptyList()
+                                        transcriptionStatus = "Starting on-device transcription…"
+                                        try {
+                                            val result = VideoTranscriber.transcribe(
+                                                context = context,
+                                                videoUri = source,
+                                                onStatus = { transcriptionStatus = it }
+                                            )
+                                            transcript = result
+                                            transcriptionStatus = if (result.isEmpty()) {
+                                                "No speech segments were detected."
+                                            } else {
+                                                "Transcript ready · " + result.size + " segments"
+                                            }
+                                        } catch (error: Exception) {
+                                            transcriptionStatus = error.localizedMessage ?: "Transcription failed. Try another video."
+                                        } finally {
+                                            transcribing = false
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = modelReady && !transcribing,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (transcribing) "Transcribing…" else "Transcribe video offline")
+                        }
+                        Text(
+                            if (!modelReady) "Download the offline model above first." else transcriptionStatus,
+                            color = Color(0xFFB6B8C5),
+                            fontSize = 12.sp
+                        )
+                        if (transcript.isNotEmpty()) {
+                            Divider(color = Color(0xFF343747))
+                            transcript.take(40).forEach { segment ->
+                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(
+                                        formatTime(segment.startMs / 1000) + " – " + formatTime(segment.endMs / 1000),
+                                        color = Violet,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(segment.text, color = Color.White, fontSize = 13.sp)
+                                }
+                            }
+                            if (transcript.size > 40) {
+                                Text("Showing the first 40 of " + transcript.size + " segments.", color = Color(0xFF9B9EAE), fontSize = 11.sp)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -213,7 +286,7 @@ private fun ClipForgeHome() {
                     Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Violet, modifier = Modifier.size(16.dp))
                     Text("  ON-DEVICE PROCESSING", color = Color(0xFF9B9EAE), fontSize = 10.sp, letterSpacing = 1.sp)
                 }
-                Text("v0.2.0", color = Color(0xFF777B8D), fontSize = 11.sp)
+                Text("v0.4.0", color = Color(0xFF777B8D), fontSize = 11.sp)
             }
         }
     }
