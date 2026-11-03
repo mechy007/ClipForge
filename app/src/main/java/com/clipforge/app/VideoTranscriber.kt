@@ -28,6 +28,8 @@ object VideoTranscriber {
     ): List<TranscriptSegment> = withContext(Dispatchers.IO) {
         val pcmFile = File(context.cacheDir, "clipforge-audio-" + System.nanoTime() + ".pcm")
         try {
+            onStatus("Checking the offline speech model…")
+            WhisperModelManager.ensureModel(context) { _, _ -> }
             onStatus("Decoding video audio on this device…")
             AudioPcmExtractor.decodeToMono16Khz(context, videoUri, pcmFile)
 
