@@ -165,7 +165,7 @@ private fun formatTime(seconds: Long): String = "%d:%02d".format(seconds / 60, s
 @Composable
 private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val player = remember(uri) {
+    val exoPlayer = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
             addListener(object : Player.Listener {
@@ -176,9 +176,9 @@ private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit) {
             prepare()
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
+    DisposableEffect(exoPlayer) { onDispose { exoPlayer.release() } }
     AndroidView(
-        factory = { viewContext -> PlayerView(viewContext).apply { this.player = player } },
+        factory = { viewContext -> PlayerView(viewContext).apply { this.player = exoPlayer } },
         modifier = Modifier.fillMaxWidth().height(210.dp)
     )
 }
