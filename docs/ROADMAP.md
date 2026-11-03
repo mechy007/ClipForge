@@ -1,37 +1,31 @@
 # ClipForge roadmap
 
-## Milestone 0 — Foundation
-- [x] Android project skeleton
-- [x] MIT license and third-party inventory
-- [x] Compose dashboard and video picker/player foundation
-- [ ] CI build verification on GitHub Actions
+## Foundation
+- [x] Android project skeleton and MIT license
+- [x] Compose dashboard and local video picker/player
+- [x] Start/end trim controls and Media3 MP4 export implementation
+- [ ] Verify build and export on physical devices
 
-## Milestone 1 — Video workflow
-- [ ] Reliable video import and metadata extraction
-- [ ] Timeline and in/out-point selection
-- [ ] Media3 Transformer export
-- [ ] Export progress, cancellation, and error recovery
+## Offline AI
+- [ ] whisper.cpp Android NDK/JNI integration
+- [ ] Model import/download with checksums and license metadata
+- [ ] Chunked timestamped transcription
+- [ ] Transcript-based highlight ranking
 
-## Milestone 2 — Offline AI
-- [ ] Integrate whisper.cpp through Android NDK/JNI
-- [ ] Model download/import with checksums and license metadata
-- [ ] Chunked transcription with timestamps
-- [ ] Transcript-based candidate highlight ranking
-
-## Milestone 3 — Smart clips
+## Smart clips
 - [ ] Candidate review and manual adjustment
-- [ ] Captions with editable text and styling
-- [ ] 9:16 / 16:9 / 1:1 output presets
+- [ ] Editable captions
+- [ ] 9:16 / 16:9 / 1:1 presets
 - [ ] Optional MediaPipe face-aware crop
 
-## Milestone 4 — Hardening
-- [ ] Device/RAM/thermal profiling
-- [ ] Accessibility and localization
-- [ ] Automated tests and release workflow
-- [ ] Optional authorized source integrations after policy/terms review
+## Hardening
+- [ ] Export progress, cancellation and recovery
+- [ ] RAM, battery and thermal profiling
+- [ ] Accessibility and automated tests
+- [ ] Optional authorized source adapters after terms review
 
-## MVP acceptance criteria
-- A user can select a local video without broad storage permissions.
-- The app can preview the selected video.
-- A later milestone must export a valid playable clip on-device.
-- No paid AI API, cloud account, or remote backend is required.
+## MVP acceptance
+- Import and preview a local video without broad storage permissions.
+- Select an in/out range and export a playable MP4 to a user-selected location.
+- Add transcription and highlight suggestions fully on-device in later milestones.
+- No paid AI API or remote backend is required.
