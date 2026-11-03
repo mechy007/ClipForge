@@ -52,9 +52,10 @@ object AudioPcmExtractor {
             extractor.selectTrack(audioTrack)
             val mime = inputFormat.getString(MediaFormat.KEY_MIME)
                 ?: error("The audio format is unavailable.")
-            decoder = MediaCodec.createDecoderByType(mime)
-            decoder.configure(inputFormat, null, null, 0)
-            decoder.start()
+            val activeDecoder = MediaCodec.createDecoderByType(mime)
+            decoder = activeDecoder
+            activeDecoder.configure(inputFormat, null, null, 0)
+            activeDecoder.start()
             started = true
 
             outputFile.parentFile?.mkdirs()
@@ -72,19 +73,19 @@ object AudioPcmExtractor {
                     currentCoroutineContext().ensureActive()
 
                     if (!inputDone) {
-                        val inputIndex = decoder.dequeueInputBuffer(10_000)
+                        val inputIndex = activeDecoder.dequeueInputBuffer(10_000)
                         if (inputIndex >= 0) {
-                            val inputBuffer = decoder.getInputBuffer(inputIndex)
+                            val inputBuffer = activeDecoder.getInputBuffer(inputIndex)
                                 ?: error("Could not access the audio decoder input buffer.")
                             inputBuffer.clear()
                             val sampleSize = extractor.readSampleData(inputBuffer, 0)
                             if (sampleSize < 0) {
-                                decoder.queueInputBuffer(
+                                activeDecoder.queueInputBuffer(
                                     inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM
                                 )
                                 inputDone = true
                             } else {
-                                decoder.queueInputBuffer(
+                                activeDecoder.queueInputBuffer(
                                     inputIndex,
                                     0,
                                     sampleSize,
@@ -96,10 +97,10 @@ object AudioPcmExtractor {
                         }
                     }
 
-                    when (val outputIndex = decoder.dequeueOutputBuffer(info, 10_000)) {
+                    when (val outputIndex = activeDecoder.dequeueOutputBuffer(info, 10_000)) {
                         MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
                         MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                            val format = decoder.outputFormat
+                            val format = activeDecoder.outputFormat
                             outputSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                             outputChannels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                             pcmEncoding = if (format.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
@@ -110,7 +111,7 @@ object AudioPcmExtractor {
                         }
                         else -> if (outputIndex >= 0) {
                             if (info.size > 0) {
-                                val buffer = decoder.getOutputBuffer(outputIndex)
+                                val buffer = activeDecoder.getOutputBuffer(outputIndex)
                                     ?: error("Could not access decoded audio.")
                                 buffer.position(info.offset)
                                 buffer.limit(info.offset + info.size)
@@ -153,7 +154,7 @@ object AudioPcmExtractor {
                             }
 
                             val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                            decoder.releaseOutputBuffer(outputIndex, false)
+                            activeDecoder.releaseOutputBuffer(outputIndex, false)
                             if (eos) outputDone = true
                         }
                     }
