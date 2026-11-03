@@ -5,7 +5,7 @@
 
 extern "C"
 JNIEXPORT jobjectArray JNICALL
-Java_com_clipforge_app_WhisperNative_transcribe(
+Java_com_clipforge_app_WhisperEngine_transcribe(
         JNIEnv *env,
         jobject,
         jstring model_path,
