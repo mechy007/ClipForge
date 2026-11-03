@@ -194,7 +194,7 @@ private fun ClipForgeHome() {
                     val remainingSeconds = if (currentPart > 0 && transcriptionElapsedSeconds > 0L) {
                         ((transcriptionElapsedSeconds.toDouble() / currentPart) * (totalParts - currentPart).coerceAtLeast(0)).toLong()
                     } else null
-                    LinearProgressIndicator(progress = { progressFraction }, modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(progress = progressFraction, modifier = Modifier.fillMaxWidth())
                     Text("Elapsed · ${formatElapsed(analysisElapsedSeconds)}", color = Muted, fontSize = 12.sp)
                     Text(
                         when {
