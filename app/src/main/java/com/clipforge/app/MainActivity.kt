@@ -8,13 +8,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,285 +35,208 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Ink = Color(0xFF0B0C12)
-private val Panel = Color(0xFF171925)
+private val Ink = Color(0xFF0B0B10)
+private val Panel = Color(0xFF171720)
 private val Violet = Color(0xFF9B83FF)
+private val Muted = Color(0xFF9A9AA9)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { ClipForgeTheme { ClipForgeHome() } }
+        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Violet, background = Ink, surface = Panel)) { ClipForgeHome() } }
     }
-}
-
-@Composable
-private fun ClipForgeTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(primary = Violet, background = Ink, surface = Panel, onBackground = Color.White, onSurface = Color.White),
-        content = content
-    )
 }
 
 @Composable
 private fun ClipForgeHome() {
-    var selectedVideo by remember { mutableStateOf<Uri?>(null) }
-    var durationMs by remember { mutableLongStateOf(0L) }
-    var startSeconds by remember { mutableFloatStateOf(0f) }
-    var endSeconds by remember { mutableFloatStateOf(15f) }
-    var status by remember { mutableStateOf("Choose a video to begin.") }
-    var exporting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    var modelReady by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
-    var modelDownloading by remember { mutableStateOf(false) }
-    var modelProgress by remember { mutableFloatStateOf(0f) }
-    var modelStatus by remember { mutableStateOf("Download the offline speech model to prepare AI features.") }
-    var transcribing by remember { mutableStateOf(false) }
-    var transcriptionStatus by remember { mutableStateOf("Select a video and download the model to create a transcript.") }
-    var transcript by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
     val scope = rememberCoroutineScope()
+    var video by remember { mutableStateOf<Uri?>(null) }
+    var duration by remember { mutableLongStateOf(0L) }
+    var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
+    var downloading by remember { mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(0f) }
+    var modelMessage by remember { mutableStateOf("One-time download · works offline afterwards") }
+    var analyzing by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("Import a video to discover its best moments.") }
+    var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
+    var editing by remember { mutableStateOf<ClipCandidate?>(null) }
+    var editStart by remember { mutableLongStateOf(0L) }
+    var editEnd by remember { mutableLongStateOf(0L) }
+    var exportMessage by remember { mutableStateOf("") }
+    var pending by remember { mutableStateOf<ClipCandidate?>(null) }
 
-    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        selectedVideo = uri
-        transcript = emptyList()
-        transcriptionStatus = "Ready to transcribe when the model is available."
-        durationMs = 0L
-        startSeconds = 0f
-        endSeconds = 15f
-        status = if (uri == null) "No video selected." else "Video loaded. Preparing preview…"
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        video = uri; duration = 0L; clips = emptyList(); editing = null
+        message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
-    val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { destination ->
-        val source = selectedVideo
-        if (destination != null && source != null && endSeconds > startSeconds) {
-            exporting = true
-            status = "Preparing export…"
-            ClipExporter.export(
-                context, source, destination,
-                (startSeconds * 1000).toLong(), (endSeconds * 1000).toLong(),
-                onStatus = { status = it },
-                onFinished = { _, message -> exporting = false; status = message }
-            )
-        } else if (destination == null) {
-            status = "Export cancelled."
-        }
+    val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
+        val src = video; val clip = pending
+        if (dest != null && src != null && clip != null) {
+            ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
+                onStatus = { exportMessage = it },
+                onFinished = { _, result -> exportMessage = result; pending = null })
+        } else { pending = null; if (dest == null) exportMessage = "Export cancelled." }
+    }
+    fun save(clip: ClipCandidate) {
+        pending = clip
+        savePicker.launch("ClipForge_\${clip.startMs / 1000}s.mp4")
     }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = Ink) {
-        Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+    Surface(Modifier.fillMaxSize(), color = Ink) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier.size(46.dp).background(Violet.copy(alpha = 0.18f), RoundedCornerShape(14.dp)),
-                    contentAlignment = Alignment.Center
-                ) { Icon(Icons.Default.ContentCut, contentDescription = null, tint = Violet) }
-                Column(modifier = Modifier.padding(start = 12.dp)) {
-                    Text("CLIPFORGE", fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-                    Text("Your videos. Your device. Your AI.", color = Color(0xFF9B9EAE), fontSize = 12.sp)
+                Box(Modifier.size(44.dp).background(Violet.copy(alpha = .18f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.ContentCut, null, tint = Violet)
+                }
+                Column(Modifier.padding(start = 11.dp)) {
+                    Text("CLIPFORGE", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+                    Text("Turn long videos into short clips", color = Muted, fontSize = 11.sp)
                 }
             }
+            Text("Your next great moment.", fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            Text("Find highlights. Create clips. Keep your work on your device.", color = Muted, fontSize = 13.sp)
 
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
-                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Create a short clip", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                    Text("Import a video, choose the moment you want, and export an MP4 directly on your device.", color = Color(0xFFB6B8C5), fontSize = 13.sp)
-                    Button(onClick = { videoPicker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null)
-                        Text("  Choose a video")
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                    Text("START A PROJECT", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                    Text(if (video == null) "Import your long-form video" else "Your video is ready", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text("Podcasts, gameplay, interviews and more. Choose a video stored on your phone.", color = Muted, fontSize = 12.sp)
+                    Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                        Icon(Icons.Default.FolderOpen, null); Text(if (video == null) "  Import video" else "  Change video")
                     }
                 }
             }
-
-
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("OFFLINE AI MODEL", color = Violet, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.3.sp)
-                    Text(WhisperModelManager.MODEL_NAME, color = Color.White, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "About 78 MB · downloaded once · stays on this device",
-                        color = Color(0xFF9B9EAE),
-                        fontSize = 12.sp
-                    )
-                    if (modelDownloading) {
-                        LinearProgressIndicator(progress = modelProgress, modifier = Modifier.fillMaxWidth())
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AutoAwesome, null, tint = Violet)
+                        Text("  ON-DEVICE AI ENGINE", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        Text(if (ready) "READY" else "SETUP", color = if (ready) Color(0xFF75D6A2) else Muted, fontSize = 10.sp)
                     }
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                modelDownloading = true
-                                modelProgress = 0f
-                                modelStatus = "Downloading and verifying model…"
-                                try {
-                                    WhisperModelManager.ensureModel(context) { downloaded, total ->
-                                        withContext(Dispatchers.Main) {
-                                            modelProgress = (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f)
-                                        }
-                                    }
-                                    modelReady = true
-                                    modelStatus = "Model verified and ready for offline transcription."
-                                } catch (error: Exception) {
-                                    modelStatus = error.localizedMessage ?: "Model download failed. Please try again."
-                                } finally {
-                                    modelDownloading = false
+                    Text(WhisperModelManager.MODEL_NAME, fontWeight = FontWeight.SemiBold)
+                    Text("Approx. 78 MB · downloaded once · stays on this device", color = Muted, fontSize = 11.sp)
+                    if (downloading) LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                    Button(onClick = {
+                        scope.launch {
+                            downloading = true
+                            try {
+                                WhisperModelManager.ensureModel(context) { done, total ->
+                                    withContext(Dispatchers.Main) { progress = (done.toFloat() / total.toFloat()).coerceIn(0f, 1f) }
                                 }
-                            }
-                        },
-                        enabled = !modelDownloading && !modelReady,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            when {
-                                modelDownloading -> "Downloading…"
-                                modelReady -> "Model downloaded"
-                                else -> "Download offline AI model"
-                            }
-                        )
+                                ready = true; modelMessage = "Verified. Ready for offline analysis."
+                            } catch (e: Exception) { modelMessage = e.localizedMessage ?: "Model download failed." }
+                            finally { downloading = false }
+                        }
+                    }, enabled = !ready && !downloading, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (downloading) "Downloading…" else if (ready) "AI model ready" else "Download offline AI model")
                     }
-                    Text(modelStatus, color = Color(0xFFB6B8C5), fontSize = 12.sp)
+                    Text(modelMessage, color = Muted, fontSize = 11.sp)
                 }
             }
 
+            if (video != null) {
+                VideoPreview(video!!, onDuration = { if (it > 0L) duration = it })
+                Button(onClick = {
+                    val src = video ?: return@Button
+                    scope.launch {
+                        analyzing = true; clips = emptyList(); editing = null
+                        message = "Transcribing audio locally…"
+                        try {
+                            val transcript = VideoTranscriber.transcribe(context, src, onStatus = { message = it })
+                            message = "Finding strong moments…"
+                            val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration) }
+                            clips = found
+                            message = if (found.isEmpty()) "No clear speech highlights found. Try a video with spoken audio."
+                                else "Analysis complete · \${found.size} clips ranked"
+                        } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
+                        finally { analyzing = false }
+                    }
+                }, enabled = ready && !analyzing && duration > 0L, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                    Icon(Icons.Default.AutoAwesome, null)
+                    Text(if (analyzing) "  Analyzing video…" else "  Find my best clips")
+                }
+                Text(message, color = Muted, fontSize = 12.sp)
+            }
 
-            if (selectedVideo != null) {
-                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text("OFFLINE TRANSCRIPTION", color = Violet, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.3.sp)
-                        Text("Turn this video's speech into timestamped text.", color = Color.White, fontWeight = FontWeight.SemiBold)
-                        Button(
-                            onClick = {
-                                val source = selectedVideo
-                                if (source != null) {
-                                    scope.launch {
-                                        transcribing = true
-                                        transcript = emptyList()
-                                        transcriptionStatus = "Starting on-device transcription…"
-                                        try {
-                                            val result = VideoTranscriber.transcribe(
-                                                context = context,
-                                                videoUri = source,
-                                                onStatus = { transcriptionStatus = it }
-                                            )
-                                            transcript = result
-                                            transcriptionStatus = if (result.isEmpty()) {
-                                                "No speech segments were detected."
-                                            } else {
-                                                "Transcript ready · " + result.size + " segments"
-                                            }
-                                        } catch (error: Exception) {
-                                            transcriptionStatus = error.localizedMessage ?: "Transcription failed. Try another video."
-                                        } finally {
-                                            transcribing = false
-                                        }
-                                    }
+            if (clips.isNotEmpty()) {
+                Text("Your highlights", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text("Ranked using local transcript signals · scores are estimates", color = Muted, fontSize = 11.sp)
+                clips.forEachIndexed { index, clip ->
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(32.dp).background(Violet.copy(alpha = .18f), CircleShape), contentAlignment = Alignment.Center) {
+                                    Text("\${index + 1}", color = Violet, fontWeight = FontWeight.Bold)
                                 }
-                            },
-                            enabled = modelReady && !transcribing,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(if (transcribing) "Transcribing…" else "Transcribe video offline")
-                        }
-                        Text(
-                            if (!modelReady) "Download the offline model above first." else transcriptionStatus,
-                            color = Color(0xFFB6B8C5),
-                            fontSize = 12.sp
-                        )
-                        if (transcript.isNotEmpty()) {
-                            Divider(color = Color(0xFF343747))
-                            transcript.take(40).forEach { segment ->
-                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    Text(
-                                        formatTime(segment.startMs / 1000) + " – " + formatTime(segment.endMs / 1000),
-                                        color = Violet,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(segment.text, color = Color.White, fontSize = 13.sp)
+                                Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                                    Text(clip.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                                    Text("\${time(clip.startMs)} – \${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
                                 }
+                                Text("\${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                             }
-                            if (transcript.size > 40) {
-                                Text("Showing the first 40 of " + transcript.size + " segments.", color = Color(0xFF9B9EAE), fontSize = 11.sp)
+                            Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                                Button(onClick = { save(clip) }, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.PlayArrow, null); Text("  Export")
+                                }
                             }
                         }
                     }
                 }
             }
-
-            if (selectedVideo != null) {
-                VideoPreview(uri = selectedVideo!!, onDuration = { duration ->
-                    if (duration > 0L && duration != durationMs) {
-                        durationMs = duration
-                        endSeconds = minOf(15f, duration / 1000f)
-                    }
-                })
-                if (durationMs > 1000L) {
-                    val total = durationMs / 1000f
-                    Text("TRIM RANGE", color = Violet, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 1.4.sp)
-                    Text("Start · ${formatTime(startSeconds.toLong())}", color = Color.White, fontSize = 13.sp)
-                    Slider(
-                        value = startSeconds.coerceIn(0f, total - 1f),
-                        onValueChange = { startSeconds = it; if (endSeconds <= it) endSeconds = minOf(total, it + 1f) },
-                        valueRange = 0f..(total - 1f)
-                    )
-                    Text("End · ${formatTime(endSeconds.toLong())} / ${formatTime(total.toLong())}", color = Color.White, fontSize = 13.sp)
-                    Slider(
-                        value = endSeconds.coerceIn(startSeconds + 0.5f, total),
-                        onValueChange = { endSeconds = it },
-                        valueRange = (startSeconds + 0.5f)..total
-                    )
-                    Button(
-                        onClick = { exportPicker.launch("ClipForge_${System.currentTimeMillis()}.mp4") },
-                        enabled = !exporting && endSeconds > startSeconds,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(if (exporting) "Exporting…" else "Export selected clip")
-                    }
-                    Text(status, color = Color(0xFFB6B8C5), fontSize = 12.sp)
-                } else {
-                    Text("Reading video duration…", color = Color(0xFFB6B8C5), fontSize = 12.sp)
-                }
-            } else {
+            editing?.let { clip ->
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Your next project starts here", fontWeight = FontWeight.SemiBold)
-                        Text("Select a local video to preview it and create your first trimmed clip.", color = Color(0xFF9B9EAE), fontSize = 13.sp)
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("QUICK CLIP EDITOR", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(clip.title, fontWeight = FontWeight.Bold)
+                        Text("Start · \${time(editStart)}", color = Muted, fontSize = 12.sp)
+                        Slider(editStart.toFloat(), { editStart = it.toLong() }, valueRange = 0f..(editEnd - 1000).coerceAtLeast(0).toFloat())
+                        Text("End · \${time(editEnd)}", color = Muted, fontSize = 12.sp)
+                        Slider(editEnd.toFloat(), { editEnd = it.toLong() }, valueRange = (editStart + 1000).toFloat()..duration.coerceAtLeast(editStart + 1000).toFloat())
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { editing = null }, modifier = Modifier.weight(1f)) { Text("Close") }
+                            Button(onClick = { save(clip.copy(startMs = editStart, endMs = editEnd)); editing = null },
+                                enabled = editEnd > editStart, modifier = Modifier.weight(1f)) { Text("Export edit") }
+                        }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Violet, modifier = Modifier.size(16.dp))
-                    Text("  ON-DEVICE PROCESSING", color = Color(0xFF9B9EAE), fontSize = 10.sp, letterSpacing = 1.sp)
+            if (exportMessage.isNotBlank()) Text(exportMessage, color = Muted, fontSize = 12.sp)
+            if (video == null) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Movie, null, tint = Violet, modifier = Modifier.size(27.dp))
+                        Text("Your clip studio", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                        Text("Import a video to preview it, transcribe speech, rank standout moments, fine-tune clips and export MP4s.", color = Muted, fontSize = 12.sp)
+                    }
                 }
-                Text("v0.4.0", color = Color(0xFF777B8D), fontSize = 11.sp)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("PRIVATE · ON-DEVICE WORKFLOW", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
+                Text("v0.5.0", color = Muted, fontSize = 10.sp)
             }
         }
     }
 }
 
-private fun formatTime(seconds: Long): String = "%d:%02d".format(seconds / 60, seconds % 60)
+private fun time(ms: Long): String = "%d:%02d".format(ms / 60_000L, (ms / 1000L) % 60L)
 
 @Composable
 private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val exoPlayer = remember(uri) {
+    val player = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
             addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_READY) onDuration(duration.coerceAtLeast(0L))
-                }
+                override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_READY) onDuration(duration.coerceAtLeast(0L)) }
             })
             prepare()
         }
     }
-    DisposableEffect(exoPlayer) { onDispose { exoPlayer.release() } }
-    AndroidView(
-        factory = { viewContext -> PlayerView(viewContext).apply { this.player = exoPlayer } },
-        modifier = Modifier.fillMaxWidth().height(210.dp)
-    )
+    DisposableEffect(player) { onDispose { player.release() } }
+    AndroidView(factory = { PlayerView(it).apply { this.player = player } }, modifier = Modifier.fillMaxWidth().height(210.dp))
 }
