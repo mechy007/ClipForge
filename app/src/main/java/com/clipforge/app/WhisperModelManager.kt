@@ -26,7 +26,7 @@ object WhisperModelManager {
     fun modelFile(context: Context): File =
         File(File(context.filesDir, "models"), MODEL_FILE)
 
-    fun isModelAvailable(context: Context): Boolean = modelFile(context).isFile
+    fun isModelAvailable(context: Context): Boolean = modelFile(context).let { it.isFile && it.length() == MODEL_SIZE_BYTES }
 
     suspend fun ensureModel(
         context: Context,
