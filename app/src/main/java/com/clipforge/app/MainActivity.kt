@@ -178,7 +178,7 @@ private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit) {
     }
     DisposableEffect(player) { onDispose { player.release() } }
     AndroidView(
-        factory = { viewContext -> PlayerView(viewContext).apply { player = this@VideoPreview.player } },
+        factory = { viewContext -> PlayerView(viewContext).apply { this.player = player } },
         modifier = Modifier.fillMaxWidth().height(210.dp)
     )
 }
