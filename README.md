@@ -1,14 +1,18 @@
 # ClipForge
 
-ClipForge is an Android-first, on-device video clipping app. It imports local videos, previews and trims them, exports MP4 clips, and can transcribe speech offline with whisper.cpp.
+ClipForge is an Android-first, local-first video clipping app. It imports local videos, previews and trims them, transcribes speech offline with whisper.cpp, ranks transcript-based highlight candidates, and exports selected moments as MP4 clips.
 
 ## Current capabilities
-- Import and preview a video using Android's document picker.
-- Choose a trim range and export an MP4 locally.
-- Download the multilingual Whisper tiny model on first use; verify its size and SHA-256 before accepting it.
+- Import and preview a local video using Android's document picker.
+- Download the multilingual Whisper tiny model once; verify its size and SHA-256 before accepting it.
 - Decode a video's audio track locally to mono 16 kHz float PCM.
-- Transcribe audio in bounded 30-second chunks and display timestamped transcript segments.
-- Keep video, audio, model and transcript processing on-device; no AI API or remote processing backend is used.
+- Transcribe audio in bounded 30-second chunks and retain timestamped transcript segments.
+- Detect candidate 30-second highlights using offline transcript signals (speech density, hook words, punctuation and vocabulary variety).
+- Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
+- Export each selected or edited clip as MP4 using Media3 Transformer.
+- Keep selected video, decoded audio, transcription and highlight scoring on-device; no AI API or remote video processing backend is used.
+
+Highlight scores are heuristic estimates of content signals. They do not predict views, engagement or virality. Results depend on speech quality and language.
 
 ## Build
 - Android / Kotlin / Jetpack Compose
@@ -20,9 +24,10 @@ ClipForge is an Android-first, on-device video clipping app. It imports local vi
 The Whisper model is downloaded from its published model repository and stored in app-private storage. Temporary decoded PCM is written to the app cache and deleted after transcription. The app does not upload the selected video or its audio.
 
 ## Next milestones
-- Transcript-based highlight ranking.
-- Clip suggestions with editable start/end points.
-- Export progress, cancellation and recovery.
+- Animated caption styles and subtitle export.
+- Aspect-ratio-aware 9:16, 16:9 and 1:1 rendering.
+- Subject-aware reframing and face tracking.
+- Batch export, export progress, cancellation and recovery.
 - Device performance, thermal and battery profiling.
 
 ## Licensing
