@@ -2,6 +2,7 @@ package com.clipforge.app
 
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -33,6 +34,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 private val Ink = Color(0xFF0B0B10)
@@ -58,6 +60,22 @@ private fun ClipForgeHome() {
     var progress by remember { mutableFloatStateOf(0f) }
     var modelMessage by remember { mutableStateOf("One-time download · works offline afterwards") }
     var analyzing by remember { mutableStateOf(false) }
+    var analysisElapsedSeconds by remember { mutableLongStateOf(0L) }
+    var transcriptionElapsedSeconds by remember { mutableLongStateOf(0L) }
+    var currentPart by remember { mutableIntStateOf(0) }
+    var analysisStartedAt by remember { mutableLongStateOf(0L) }
+    var transcriptionStartedAt by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(analyzing) {
+        while (analyzing) {
+            val now = SystemClock.elapsedRealtime()
+            analysisElapsedSeconds = ((now - analysisStartedAt) / 1000L).coerceAtLeast(0L)
+            if (transcriptionStartedAt > 0L) {
+                transcriptionElapsedSeconds = ((now - transcriptionStartedAt) / 1000L).coerceAtLeast(0L)
+            }
+            delay(1000L)
+        }
+    }
     var message by remember { mutableStateOf("Import a video to discover its best moments.") }
     var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
     var editing by remember { mutableStateOf<ClipCandidate?>(null) }
@@ -143,9 +161,21 @@ private fun ClipForgeHome() {
                     val src = video ?: return@Button
                     scope.launch {
                         analyzing = true; clips = emptyList(); editing = null
-                        message = "Transcribing audio locally…"
+                        analysisStartedAt = SystemClock.elapsedRealtime()
+                        transcriptionStartedAt = 0L
+                        analysisElapsedSeconds = 0L
+                        transcriptionElapsedSeconds = 0L
+                        currentPart = 0
+                        message = "Preparing audio locally…"
                         try {
-                            val transcript = VideoTranscriber.transcribe(context, src, onStatus = { message = it })
+                            val transcript = VideoTranscriber.transcribe(context, src, onStatus = { status ->
+                                message = status
+                                val partMatch = Regex("part (\\d+)").find(status)
+                                if (partMatch != null) {
+                                    if (transcriptionStartedAt == 0L) transcriptionStartedAt = SystemClock.elapsedRealtime()
+                                    currentPart = partMatch.groupValues[1].toIntOrNull() ?: currentPart
+                                }
+                            })
                             message = "Finding strong moments…"
                             val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration) }
                             clips = found
@@ -157,6 +187,22 @@ private fun ClipForgeHome() {
                 }, enabled = ready && !analyzing && duration > 0L, modifier = Modifier.fillMaxWidth().height(54.dp)) {
                     Icon(Icons.Default.AutoAwesome, null)
                     Text(if (analyzing) "  Analyzing video…" else "  Find my best clips")
+                }
+                if (analyzing) {
+                    val totalParts = ((duration / 1000.0) / 30.0).toInt().coerceAtLeast(1)
+                    val progressFraction = if (currentPart > 0) (currentPart.toFloat() / totalParts).coerceIn(0f, 0.98f) else 0f
+                    val remainingSeconds = if (currentPart > 0 && transcriptionElapsedSeconds > 0L) {
+                        ((transcriptionElapsedSeconds.toDouble() / currentPart) * (totalParts - currentPart).coerceAtLeast(0)).toLong()
+                    } else null
+                    LinearProgressIndicator(progress = progressFraction, modifier = Modifier.fillMaxWidth())
+                    Text("Elapsed · ${formatElapsed(analysisElapsedSeconds)}", color = Muted, fontSize = 12.sp)
+                    Text(
+                        when {
+                            currentPart > 0 && remainingSeconds != null -> "Audio transcription · $currentPart / $totalParts parts · about ${formatElapsed(remainingSeconds)} remaining"
+                            else -> "Preparing audio · elapsed ${formatElapsed(analysisElapsedSeconds)} · estimating time…"
+                        },
+                        color = Muted, fontSize = 11.sp
+                    )
                 }
                 Text(message, color = Muted, fontSize = 12.sp)
             }
@@ -222,6 +268,8 @@ private fun ClipForgeHome() {
         }
     }
 }
+
+private fun formatElapsed(seconds: Long): String = "%d:%02d".format(seconds / 60L, seconds % 60L)
 
 private fun time(ms: Long): String = "%d:%02d".format(ms / 60_000L, (ms / 1000L) % 60L)
 
