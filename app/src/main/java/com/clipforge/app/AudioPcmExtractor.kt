@@ -117,8 +117,7 @@ object AudioPcmExtractor {
                                 buffer.order(ByteOrder.LITTLE_ENDIAN)
 
                                 val bytesPerSample = when (pcmEncoding) {
-                                    AudioFormat.ENCODING_PCM_FLOAT,
-                                    AudioFormat.ENCODING_PCM_32BIT -> 4
+                                    AudioFormat.ENCODING_PCM_FLOAT -> 4
                                     AudioFormat.ENCODING_PCM_8BIT -> 1
                                     else -> 2
                                 }
@@ -131,9 +130,6 @@ object AudioPcmExtractor {
                                     repeat(outputChannels) {
                                         val sample = when (pcmEncoding) {
                                             AudioFormat.ENCODING_PCM_FLOAT -> buffer.float
-                                            AudioFormat.ENCODING_PCM_32BIT -> {
-                                                (buffer.int.toDouble() / Int.MAX_VALUE.toDouble()).toFloat()
-                                            }
                                             AudioFormat.ENCODING_PCM_8BIT -> {
                                                 (((buffer.get().toInt() and 0xff) - 128) / 128f)
                                             }
@@ -149,12 +145,8 @@ object AudioPcmExtractor {
                                     while (outputSamplesWritten.toDouble() * outputSampleRate / 16000.0 <= frameIndex.toDouble()) {
                                         val targetSourceFrame =
                                             outputSamplesWritten.toDouble() * outputSampleRate / 16000.0
-                                        if (targetSourceFrame >= frameIndex.toDouble()) {
-                                            pcmOut.writeFloat(mono)
-                                            outputSamplesWritten++
-                                        } else {
-                                            break
-                                        }
+                                        pcmOut.writeFloat(mono)
+                                        outputSamplesWritten++
                                     }
                                 }
                                 sourceFramesSeen += frames
