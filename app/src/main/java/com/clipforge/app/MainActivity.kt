@@ -59,11 +59,11 @@ private fun ClipForgeHome() {
     var endSeconds by remember { mutableFloatStateOf(15f) }
     var status by remember { mutableStateOf("Choose a video to begin.") }
     var exporting by remember { mutableStateOf(false) }
-    var modelReady by remember { mutableStateOf(WhisperModelManager.isModelAvailable(androidx.compose.ui.platform.LocalContext.current)) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var modelReady by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var modelDownloading by remember { mutableStateOf(false) }
     var modelProgress by remember { mutableFloatStateOf(0f) }
     var modelStatus by remember { mutableStateOf("Download the offline speech model to prepare AI features.") }
-    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
