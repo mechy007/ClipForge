@@ -1,12 +1,16 @@
 # Third-party notices
 
-This file tracks third-party software and model assets included by ClipForge.
+This file tracks third-party software and model assets used by ClipForge.
 
-| Component | Planned use | License | Status |
+| Component | Use | License | Version / details |
 |---|---|---|---|
-| AndroidX / Jetpack Compose | Android UI and platform integration | Apache-2.0 | Dependency; retain notices |
-| AndroidX Media3 | Playback and media transformation | Apache-2.0 | Dependency; retain notices |
-| whisper.cpp | Offline speech-to-text runtime | MIT | Planned; audit exact revision and native build |
-| MediaPipe Tasks | Optional face detection/tracking | Apache-2.0 | Planned; audit model terms separately |
+| AndroidX / Jetpack Compose | Android UI and platform integration | Apache-2.0 | Dependencies; retain notices |
+| AndroidX Media3 | Playback and media transformation | Apache-2.0 | 1.5.1 |
+| whisper.cpp | Offline speech-to-text runtime | MIT | Pinned to v1.9.5; fetched at native build time |
+| Whisper tiny multilingual model | Downloaded on first AI setup | MIT | 77,691,713 bytes; SHA-256: be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21 |
 
-No model weights are bundled in the initial foundation. Model licenses, attribution, source URLs, checksums, and redistribution terms must be recorded before model distribution.
+Model source: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+
+The model is downloaded to app-private storage after the user chooses to enable offline AI. It is not bundled in the APK or uploaded to a server. The app verifies the expected byte length and SHA-256 before accepting the file.
+
+Whisper.cpp source: https://github.com/ggml-org/whisper.cpp/tree/v1.9.5

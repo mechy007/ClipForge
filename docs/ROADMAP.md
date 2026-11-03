@@ -4,12 +4,14 @@
 - [x] Android project skeleton and MIT license
 - [x] Compose dashboard and local video picker/player
 - [x] Start/end trim controls and Media3 MP4 export implementation
-- [ ] Verify build and export on physical devices
+- [x] Physical-device smoke test reported by project owner
+- [x] GitHub Actions debug build verification
 
 ## Offline AI
-- [ ] whisper.cpp Android NDK/JNI integration
-- [ ] Model import/download with checksums and license metadata
-- [ ] Chunked timestamped transcription
+- [x] Pin whisper.cpp v1.9.5 and add Android NDK/JNI runtime boundary
+- [x] Add first-run model download with SHA-256 verification and progress UI
+- [ ] Decode selected video audio to mono 16 kHz PCM
+- [ ] Connect video audio to Whisper and show timestamped transcript
 - [ ] Transcript-based highlight ranking
 
 ## Smart clips
@@ -19,6 +21,7 @@
 - [ ] Optional MediaPipe face-aware crop
 
 ## Hardening
+- [ ] Download resume/cancel and model storage management
 - [ ] Export progress, cancellation and recovery
 - [ ] RAM, battery and thermal profiling
 - [ ] Accessibility and automated tests
@@ -27,5 +30,5 @@
 ## MVP acceptance
 - Import and preview a local video without broad storage permissions.
 - Select an in/out range and export a playable MP4 to a user-selected location.
-- Add transcription and highlight suggestions fully on-device in later milestones.
+- Transcribe selected video audio and suggest highlights fully on-device.
 - No paid AI API or remote backend is required.
