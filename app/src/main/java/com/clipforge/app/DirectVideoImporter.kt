@@ -63,12 +63,14 @@ object DirectVideoImporter {
             require(total == null || total <= MAX_BYTES) { "Video exceeds the 1 GiB import limit." }
 
             val directory = File(context.filesDir, "imports").apply { mkdirs() }
-            destination = File(directory, "clipforge_" + System.currentTimeMillis() + "." + extension)
-            partial = File(directory, destination.name + ".part")
+            val targetFile = File(directory, "clipforge_" + System.currentTimeMillis() + "." + extension)
+            val partialFile = File(directory, targetFile.name + ".part")
+            destination = targetFile
+            partial = partialFile
 
             var downloaded = 0L
             BufferedInputStream(connection.inputStream).use { input ->
-                partial.outputStream().buffered().use { output ->
+                partialFile.outputStream().buffered().use { output ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
                         currentCoroutineContext().ensureActive()
@@ -82,8 +84,8 @@ object DirectVideoImporter {
                 }
             }
             require(downloaded > 0L) { "The video file was empty." }
-            require(partial.renameTo(destination)) { "Could not save the downloaded video." }
-            Uri.fromFile(destination)
+            require(partialFile.renameTo(targetFile)) { "Could not save the downloaded video." }
+            Uri.fromFile(targetFile)
         } catch (error: Exception) {
             partial?.delete()
             destination?.delete()
