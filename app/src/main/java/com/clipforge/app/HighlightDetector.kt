@@ -61,7 +61,7 @@ object HighlightDetector {
         "V7 opening-first" to RankingWeights(.08f,.14f,.06f,.05f,.18f,.12f,.12f,.25f),
         "V8 engagement-proxy" to RankingWeights(.15f,.25f,.15f,.10f,.10f,.08f,.07f,.10f),
         "V9 robust-balanced" to RankingWeights(.08f,.10f,.05f,.06f,.22f,.18f,.17f,.14f),
-        "V10 context-novelty-clarity" to RankingWeights(.07f,.08f,.04f,.05f,.25f,.22f,.19f,.14f)
+        "V10 context-novelty-clarity" to RankingWeights(.0673f,.0769f,.0385f,.0481f,.2404f,.2115f,.1827f,.1346f)
     )
 
     val productionStrategy: String = "V9 robust-balanced"
