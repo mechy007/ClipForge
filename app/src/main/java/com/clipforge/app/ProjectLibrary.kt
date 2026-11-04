@@ -93,6 +93,18 @@ class ProjectLibrary private constructor(context: Context) :
         return writableDatabase.insertOrThrow("projects", null, values)
     }
 
+    fun updateProjectDuration(projectId: Long, durationMs: Long) {
+        writableDatabase.update(
+            "projects",
+            ContentValues().apply {
+                put("duration_ms", durationMs.coerceAtLeast(0L))
+                put("updated_at", System.currentTimeMillis())
+            },
+            "id=?",
+            arrayOf(projectId.toString())
+        )
+    }
+
     fun updateProjectStatus(projectId: Long, status: String) {
         require(status in setOf("imported", "analyzing", "completed", "exported", "failed"))
         writableDatabase.update(
