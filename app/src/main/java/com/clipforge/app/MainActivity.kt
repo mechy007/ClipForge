@@ -83,9 +83,21 @@ private fun ClipForgeHome() {
     var editEnd by remember { mutableLongStateOf(0L) }
     var exportMessage by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
+    var activeProjectId by remember { mutableStateOf<Long?>(null) }
+    var savedProjects by remember { mutableStateOf(ProjectLibrary.get(context).listProjects()) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         video = uri; duration = 0L; clips = emptyList(); editing = null
+        activeProjectId = null
+        if (uri != null) {
+            try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            catch (_: SecurityException) { /* Provider may not support persistable grants. */ }
+            activeProjectId = ProjectLibrary.get(context).createProject(
+                uri.lastPathSegment?.substringAfterLast('/')?.take(80)?.ifBlank { "Untitled video" } ?: "Untitled video",
+                uri.toString()
+            )
+            savedProjects = ProjectLibrary.get(context).listProjects()
+        }
         message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
@@ -115,6 +127,34 @@ private fun ClipForgeHome() {
             }
             Text("Your next great moment.", fontSize = 27.sp, fontWeight = FontWeight.Bold)
             Text("Find highlights. Create clips. Keep your work on your device.", color = Muted, fontSize = 13.sp)
+
+            if (savedProjects.isNotEmpty()) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("SAVED PROJECTS", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        savedProjects.take(6).forEach { project ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(project.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text(project.status.uppercase() + " · " + (project.durationMs / 1000L) + "s · " +
+                                        ProjectLibrary.get(context).getHighlights(project.id).size + " highlights",
+                                        color = Muted, fontSize = 10.sp)
+                                }
+                                TextButton(onClick = {
+                                    activeProjectId = project.id
+                                    video = Uri.parse(project.sourceUri)
+                                    duration = project.durationMs
+                                    clips = ProjectLibrary.get(context).getHighlights(project.id).map {
+                                        ClipCandidate(it.startMs, it.endMs, it.title, it.preview, it.score)
+                                    }
+                                    editing = null
+                                    message = "Project reopened · saved highlights restored"
+                                }) { Text("Open") }
+                            }
+                        }
+                    }
+                }
+            }
 
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
@@ -156,7 +196,12 @@ private fun ClipForgeHome() {
             }
 
             if (video != null) {
-                VideoPreview(video!!, onDuration = { if (it > 0L) duration = it })
+                VideoPreview(video!!, onDuration = {
+                    if (it > 0L) {
+                        duration = it
+                        activeProjectId?.let { id -> ProjectLibrary.get(context).updateProjectDuration(id, it) }
+                    }
+                })
                 Button(onClick = {
                     val src = video ?: return@Button
                     scope.launch {
