@@ -85,6 +85,10 @@ private fun ClipForgeHome() {
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
     var activeProjectId by remember { mutableStateOf<Long?>(null) }
     var savedProjects by remember { mutableStateOf(ProjectLibrary.get(context).listProjects()) }
+    var linkInput by remember { mutableStateOf("") }
+    var linkLoading by remember { mutableStateOf(false) }
+    var linkMessage by remember { mutableStateOf("") }
+    var linkProgress by remember { mutableFloatStateOf(0f) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         video = uri; duration = 0L; clips = emptyList(); editing = null
@@ -166,6 +170,53 @@ private fun ClipForgeHome() {
                     }
                 }
             }
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("IMPORT FROM A DIRECT VIDEO LINK", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = linkInput,
+                        onValueChange = { linkInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("https://example.com/video.mp4") },
+                        enabled = !linkLoading
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                linkLoading = true
+                                linkProgress = 0f
+                                linkMessage = "Checking secure video link…"
+                                try {
+                                    val imported = DirectVideoImporter.download(context, linkInput) { done, total ->
+                                        if (total != null && total > 0L) linkProgress = (done.toFloat() / total).coerceIn(0f, 1f)
+                                    }
+                                    video = imported
+                                    duration = 0L
+                                    clips = emptyList()
+                                    editing = null
+                                    activeProjectId = ProjectLibrary.get(context).createProject(
+                                        "Linked video " + System.currentTimeMillis().toString().takeLast(6),
+                                        imported.toString()
+                                    )
+                                    savedProjects = withContext(Dispatchers.IO) { ProjectLibrary.get(context).listProjects() }
+                                    linkMessage = "Video imported to private app storage."
+                                    message = "Video ready · run AI highlight detection."
+                                } catch (error: Exception) {
+                                    linkMessage = error.localizedMessage ?: "Could not import this link."
+                                } finally { linkLoading = false }
+                            }
+                        },
+                        enabled = !linkLoading && linkInput.startsWith("https://"),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (linkLoading) "Downloading video…" else "Import video link") }
+                    if (linkLoading) LinearProgressIndicator(progress = linkProgress, modifier = Modifier.fillMaxWidth())
+                    if (linkMessage.isNotBlank()) Text(linkMessage, color = Muted, fontSize = 11.sp)
+                    Text("Direct HTTPS video files only · up to 1 GiB · no platform scraping or DRM bypass",
+                        color = Muted, fontSize = 10.sp)
+                }
+            }
+
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
