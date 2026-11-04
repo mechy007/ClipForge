@@ -129,7 +129,7 @@ private fun ClipForgeHome() {
                     importingLink = true; linkStatus = "Checking direct video link…"
                     try {
                         val imported = DirectVideoImporter.download(context, linkText) { p ->
-                            linkStatus = if (p.totalBytes != null) "Downloaded ${p.downloadedBytes / 1_048_576} / ${p.totalBytes / 1_048_576} MB" else "Downloaded ${p.downloadedBytes / 1_048_576} MB"
+                            if (p.downloadedBytes % (1024L * 1024L) < 64L * 1024L) scope.launch { linkStatus = if (p.totalBytes != null) "Downloaded ${p.downloadedBytes / 1_048_576} / ${p.totalBytes / 1_048_576} MB" else "Downloaded ${p.downloadedBytes / 1_048_576} MB" }
                         }
                         video = imported; duration = 0L; clips = emptyList(); linkStatus = "Video imported. Preview it and run AI analysis."
                     } catch (e: Exception) { linkStatus = e.localizedMessage ?: "Video import failed." }
