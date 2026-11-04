@@ -11,10 +11,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Imports direct, publicly reachable HTTPS video files only.
- * It deliberately does not scrape video platforms or bypass authentication/DRM.
- */
+/** Imports direct, publicly reachable HTTPS video files only. No platform scraping or DRM bypass. */
 object DirectVideoImporter {
     private const val MAX_BYTES = 1_073_741_824L
     private val allowedExtensions = setOf("mp4", "m4v", "mov", "webm", "mkv", "3gp")
@@ -32,21 +29,10 @@ object DirectVideoImporter {
             "This video link is not valid."
         }
 
-        val connection = (parsed.openConnection() as? HttpURLConnection)
+        val connection = parsed.openConnection() as? HttpURLConnection
             ?: error("This link cannot be downloaded as a video file.")
-        val directory = File(context.filesDir, "imports").apply { mkdirs() }
-        val mimeHint = URL(rawUrl.trim()).openConnection().contentType?.substringBefore(';')?.lowercase().orEmpty()
-        val pathExtension = parsed.path.substringAfterLast('.', "").lowercase()
-        val fileExtension = when {
-            pathExtension in allowedExtensions -> pathExtension
-            mimeHint.contains("mp4") -> "mp4"
-            mimeHint.contains("webm") -> "webm"
-            mimeHint.contains("quicktime") -> "mov"
-            else -> "mp4"
-        }
-        val destination = File(directory, "clipforge_" + System.currentTimeMillis() + "." + fileExtension)
-        val partial = File(directory, destination.name + ".part")
-
+        var destination: File? = null
+        var partial: File? = null
         try {
             connection.instanceFollowRedirects = true
             connection.connectTimeout = 15_000
@@ -62,13 +48,23 @@ object DirectVideoImporter {
             }
 
             val mime = connection.contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
-            val extension = parsed.path.substringAfterLast('.', "").lowercase()
-            require(mime.startsWith("video/") || extension in allowedExtensions) {
-                "This is not a direct video file link. Use an HTTPS link ending in a supported video format."
+            val pathExtension = parsed.path.substringAfterLast('.', "").lowercase()
+            require(mime.startsWith("video/") || pathExtension in allowedExtensions) {
+                "This is not a direct video file link. Use an HTTPS link to a supported video format."
             }
-
+            val extension = when {
+                pathExtension in allowedExtensions -> pathExtension
+                mime.contains("webm") -> "webm"
+                mime.contains("quicktime") -> "mov"
+                mime.contains("3gpp") -> "3gp"
+                else -> "mp4"
+            }
             val total = connection.contentLengthLong.takeIf { it > 0L }
             require(total == null || total <= MAX_BYTES) { "Video exceeds the 1 GiB import limit." }
+
+            val directory = File(context.filesDir, "imports").apply { mkdirs() }
+            destination = File(directory, "clipforge_" + System.currentTimeMillis() + "." + extension)
+            partial = File(directory, destination.name + ".part")
 
             var downloaded = 0L
             BufferedInputStream(connection.inputStream).use { input ->
@@ -89,8 +85,8 @@ object DirectVideoImporter {
             require(partial.renameTo(destination)) { "Could not save the downloaded video." }
             Uri.fromFile(destination)
         } catch (error: Exception) {
-            partial.delete()
-            destination.delete()
+            partial?.delete()
+            destination?.delete()
             throw error
         } finally {
             connection.disconnect()
