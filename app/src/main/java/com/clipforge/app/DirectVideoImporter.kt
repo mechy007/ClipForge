@@ -35,7 +35,16 @@ object DirectVideoImporter {
         val connection = (parsed.openConnection() as? HttpURLConnection)
             ?: error("This link cannot be downloaded as a video file.")
         val directory = File(context.filesDir, "imports").apply { mkdirs() }
-        val destination = File(directory, "clipforge_" + System.currentTimeMillis() + ".video")
+        val mimeHint = URL(rawUrl.trim()).openConnection().contentType?.substringBefore(';')?.lowercase().orEmpty()
+        val pathExtension = parsed.path.substringAfterLast('.', "").lowercase()
+        val fileExtension = when {
+            pathExtension in allowedExtensions -> pathExtension
+            mimeHint.contains("mp4") -> "mp4"
+            mimeHint.contains("webm") -> "webm"
+            mimeHint.contains("quicktime") -> "mov"
+            else -> "mp4"
+        }
+        val destination = File(directory, "clipforge_" + System.currentTimeMillis() + "." + fileExtension)
         val partial = File(directory, destination.name + ".part")
 
         try {
