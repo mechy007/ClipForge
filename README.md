@@ -3,16 +3,17 @@
 ClipForge is an Android-first, local-first video clipping app. It imports local videos, previews and trims them, transcribes speech offline with whisper.cpp, ranks transcript-based highlight candidates, and exports selected moments as MP4 clips.
 
 ## Current capabilities
-- Import and preview a local video using Android's document picker.
+- Import and preview a local video using Android's document picker, or import a direct HTTPS video-file link (up to 1 GiB). Platform-page scraping, authentication bypass and DRM bypass are not supported.
 - Download the multilingual Whisper tiny model once; verify its size and SHA-256 before accepting it.
 - Decode a video's audio track locally to mono 16 kHz float PCM.
 - Transcribe audio in bounded 30-second chunks and retain timestamped transcript segments.
 - Detect candidate 30-second highlights using offline transcript signals (speech density, hook words, punctuation and vocabulary variety).
 - Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
 - Export each selected or edited clip as MP4 using Media3 Transformer.
+- Save project metadata, timestamped transcripts, ranked highlights and exported clip references in a private SQLite project library; reopen saved projects and restore their highlights.
 - Keep selected video, decoded audio, transcription and highlight scoring on-device; no AI API or remote video processing backend is used.
 
-Highlight scores are heuristic estimates of content signals. They do not predict views, engagement or virality. Results depend on speech quality and language.
+Highlight scores are heuristic estimates of content signals. They do not predict views, engagement or virality. Results depend on speech quality and language. The default V9 ranking profile was selected from a 100-run synthetic comparison of ten profiles; see [the simulation report](docs/AI_RANKING_SIMULATION.md). Synthetic results are not real-video accuracy measurements.
 
 ## Build
 - Android / Kotlin / Jetpack Compose
@@ -29,6 +30,7 @@ The Whisper model is downloaded from its published model repository and stored i
 - Subject-aware reframing and face tracking.
 - Batch export, export progress, cancellation and recovery.
 - Device performance, thermal and battery profiling.
+- Real-video labeled evaluation of highlight quality and device-side performance.
 
 ## Licensing
 ClipForge application code is MIT licensed. See THIRD_PARTY_NOTICES.md for dependency and model notices.

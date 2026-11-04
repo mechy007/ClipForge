@@ -83,9 +83,25 @@ private fun ClipForgeHome() {
     var editEnd by remember { mutableLongStateOf(0L) }
     var exportMessage by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
+    var activeProjectId by remember { mutableStateOf<Long?>(null) }
+    var savedProjects by remember { mutableStateOf(ProjectLibrary.get(context).listProjects()) }
+    var linkInput by remember { mutableStateOf("") }
+    var linkLoading by remember { mutableStateOf(false) }
+    var linkMessage by remember { mutableStateOf("") }
+    var linkProgress by remember { mutableFloatStateOf(0f) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         video = uri; duration = 0L; clips = emptyList(); editing = null
+        activeProjectId = null
+        if (uri != null) {
+            try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            catch (_: SecurityException) { /* Provider may not support persistable grants. */ }
+            activeProjectId = ProjectLibrary.get(context).createProject(
+                uri.lastPathSegment?.substringAfterLast('/')?.take(80)?.ifBlank { "Untitled video" } ?: "Untitled video",
+                uri.toString()
+            )
+            savedProjects = ProjectLibrary.get(context).listProjects()
+        }
         message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
@@ -93,12 +109,20 @@ private fun ClipForgeHome() {
         if (dest != null && src != null && clip != null) {
             ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
                 onStatus = { exportMessage = it },
-                onFinished = { _, result -> exportMessage = result; pending = null })
+                onFinished = { success, result ->
+                    exportMessage = result
+                    if (success && activeProjectId != null) {
+                        val saved = ProjectLibrary.get(context).getHighlights(activeProjectId!!)
+                            .firstOrNull { it.startMs == clip.startMs && it.endMs == clip.endMs }
+                        if (saved != null) ProjectLibrary.get(context).recordExport(saved.id, dest.toString())
+                    }
+                    pending = null
+                })
         } else { pending = null; if (dest == null) exportMessage = "Export cancelled." }
     }
     fun save(clip: ClipCandidate) {
         pending = clip
-        savePicker.launch("ClipForge_\${clip.startMs / 1000}s.mp4")
+        savePicker.launch("ClipForge_${clip.startMs / 1000}s.mp4")
     }
 
     Surface(Modifier.fillMaxSize(), color = Ink) {
@@ -116,6 +140,34 @@ private fun ClipForgeHome() {
             Text("Your next great moment.", fontSize = 27.sp, fontWeight = FontWeight.Bold)
             Text("Find highlights. Create clips. Keep your work on your device.", color = Muted, fontSize = 13.sp)
 
+            if (savedProjects.isNotEmpty()) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("SAVED PROJECTS", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        savedProjects.take(6).forEach { project ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(project.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text(project.status.uppercase() + " · " + (project.durationMs / 1000L) + "s · " +
+                                        ProjectLibrary.get(context).getHighlights(project.id).size + " highlights",
+                                        color = Muted, fontSize = 10.sp)
+                                }
+                                TextButton(onClick = {
+                                    activeProjectId = project.id
+                                    video = Uri.parse(project.sourceUri)
+                                    duration = project.durationMs
+                                    clips = ProjectLibrary.get(context).getHighlights(project.id).map {
+                                        ClipCandidate(it.startMs, it.endMs, it.title, it.preview, it.score)
+                                    }
+                                    editing = null
+                                    message = "Project reopened · saved highlights restored"
+                                }) { Text("Open") }
+                            }
+                        }
+                    }
+                }
+            }
+
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                     Text("START A PROJECT", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
@@ -126,6 +178,57 @@ private fun ClipForgeHome() {
                     }
                 }
             }
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("IMPORT FROM A DIRECT VIDEO LINK", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = linkInput,
+                        onValueChange = { linkInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("https://example.com/video.mp4") },
+                        enabled = !linkLoading
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                linkLoading = true
+                                linkProgress = 0f
+                                linkMessage = "Checking secure video link…"
+                                try {
+                                    val imported = DirectVideoImporter.download(context, linkInput) { done, total ->
+                                        if (total != null && total > 0L) {
+                                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                linkProgress = (done.toFloat() / total).coerceIn(0f, 1f)
+                                            }
+                                        }
+                                    }
+                                    video = imported
+                                    duration = 0L
+                                    clips = emptyList()
+                                    editing = null
+                                    activeProjectId = ProjectLibrary.get(context).createProject(
+                                        "Linked video " + System.currentTimeMillis().toString().takeLast(6),
+                                        imported.toString()
+                                    )
+                                    savedProjects = withContext(Dispatchers.IO) { ProjectLibrary.get(context).listProjects() }
+                                    linkMessage = "Video imported to private app storage."
+                                    message = "Video ready · run AI highlight detection."
+                                } catch (error: Exception) {
+                                    linkMessage = error.localizedMessage ?: "Could not import this link."
+                                } finally { linkLoading = false }
+                            }
+                        },
+                        enabled = !linkLoading && linkInput.startsWith("https://"),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (linkLoading) "Downloading video…" else "Import video link") }
+                    if (linkLoading) LinearProgressIndicator(progress = linkProgress, modifier = Modifier.fillMaxWidth())
+                    if (linkMessage.isNotBlank()) Text(linkMessage, color = Muted, fontSize = 11.sp)
+                    Text("Direct HTTPS video files only · up to 1 GiB · no platform scraping or DRM bypass",
+                        color = Muted, fontSize = 10.sp)
+                }
+            }
+
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -156,7 +259,12 @@ private fun ClipForgeHome() {
             }
 
             if (video != null) {
-                VideoPreview(video!!, onDuration = { if (it > 0L) duration = it })
+                VideoPreview(video!!, onDuration = {
+                    if (it > 0L) {
+                        duration = it
+                        activeProjectId?.let { id -> ProjectLibrary.get(context).updateProjectDuration(id, it) }
+                    }
+                })
                 Button(onClick = {
                     val src = video ?: return@Button
                     scope.launch {
@@ -179,8 +287,14 @@ private fun ClipForgeHome() {
                             message = "Finding strong moments…"
                             val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration) }
                             clips = found
+                            activeProjectId?.let { id ->
+                                withContext(Dispatchers.IO) {
+                                    ProjectLibrary.get(context).saveAnalysis(id, transcript, found)
+                                }
+                                savedProjects = withContext(Dispatchers.IO) { ProjectLibrary.get(context).listProjects() }
+                            }
                             message = if (found.isEmpty()) "No clear speech highlights found. Try a video with spoken audio."
-                                else "Analysis complete · \${found.size} clips ranked"
+                                else "Analysis complete · ${found.size} clips ranked · project saved"
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
                     }
@@ -215,13 +329,13 @@ private fun ClipForgeHome() {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(32.dp).background(Violet.copy(alpha = .18f), CircleShape), contentAlignment = Alignment.Center) {
-                                    Text("\${index + 1}", color = Violet, fontWeight = FontWeight.Bold)
+                                    Text("${index + 1}", color = Violet, fontWeight = FontWeight.Bold)
                                 }
                                 Column(Modifier.weight(1f).padding(start = 9.dp)) {
                                     Text(clip.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                                    Text("\${time(clip.startMs)} – \${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
+                                    Text("${time(clip.startMs)} – ${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
                                 }
-                                Text("\${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                Text("${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                             }
                             Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -239,9 +353,9 @@ private fun ClipForgeHome() {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("QUICK CLIP EDITOR", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(clip.title, fontWeight = FontWeight.Bold)
-                        Text("Start · \${time(editStart)}", color = Muted, fontSize = 12.sp)
+                        Text("Start · ${time(editStart)}", color = Muted, fontSize = 12.sp)
                         Slider(editStart.toFloat(), { editStart = it.toLong() }, valueRange = 0f..(editEnd - 1000).coerceAtLeast(0).toFloat())
-                        Text("End · \${time(editEnd)}", color = Muted, fontSize = 12.sp)
+                        Text("End · ${time(editEnd)}", color = Muted, fontSize = 12.sp)
                         Slider(editEnd.toFloat(), { editEnd = it.toLong() }, valueRange = (editStart + 1000).toFloat()..duration.coerceAtLeast(editStart + 1000).toFloat())
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { editing = null }, modifier = Modifier.weight(1f)) { Text("Close") }
@@ -263,7 +377,7 @@ private fun ClipForgeHome() {
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("PRIVATE · ON-DEVICE WORKFLOW", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
-                Text("v0.5.0", color = Muted, fontSize = 10.sp)
+                Text("v0.6.0", color = Muted, fontSize = 10.sp)
             }
         }
     }
