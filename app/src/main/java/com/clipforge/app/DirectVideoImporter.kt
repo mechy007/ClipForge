@@ -21,7 +21,7 @@ object DirectVideoImporter {
         withContext(Dispatchers.IO) {
             val cleanUrl = rawUrl.trim()
             val parsed = Uri.parse(cleanUrl)
-            require(parsed.scheme == "https" || parsed.scheme == "http") { "Enter a valid HTTP or HTTPS video link." }
+            require(parsed.scheme == "https") { "For secure downloads, use an HTTPS direct video link." }
             require(!parsed.host.isNullOrBlank() && parsed.userInfo == null) { "This video link is invalid or contains embedded credentials." }
             val connection = (URL(cleanUrl).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 15_000; readTimeout = 30_000; instanceFollowRedirects = true
