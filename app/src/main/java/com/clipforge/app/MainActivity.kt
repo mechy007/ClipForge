@@ -91,7 +91,7 @@ private fun ClipForgeHome() {
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        video = uri; duration = 0L; clips = emptyList(); editing = null
+        if (uri != null) {\n            try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }\n        }\n        video = uri; duration = 0L; clips = emptyList(); editing = null
         message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
