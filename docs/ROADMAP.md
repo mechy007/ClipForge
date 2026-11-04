@@ -12,10 +12,16 @@
 - [x] Add first-run model download with SHA-256 verification and progress UI
 - [ ] Decode selected video audio to mono 16 kHz PCM
 - [ ] Connect video audio to Whisper and show timestamped transcript
-- [ ] Transcript-based highlight ranking
+- [x] Transcript-based highlight ranking with ten selectable scoring profiles (V9 default)
+- [x] Synthetic 100-run comparison report for ten scoring profiles
+
+## Project library and imports
+- [x] Private SQLite project, transcript, highlight and export-reference storage
+- [x] Reopen saved projects and restore ranked highlights
+- [x] Direct HTTPS video-file import with MIME checks, size cap and temporary-file cleanup
 
 ## Smart clips
-- [ ] Candidate review and manual adjustment
+- [x] Candidate review and manual adjustment
 - [ ] Editable captions
 - [ ] 9:16 / 16:9 / 1:1 presets
 - [ ] Optional MediaPipe face-aware crop
@@ -24,7 +30,8 @@
 - [ ] Download resume/cancel and model storage management
 - [ ] Export progress, cancellation and recovery
 - [ ] RAM, battery and thermal profiling
-- [ ] Accessibility and automated tests
+- [ ] Accessibility and broader automated tests
+- [x] Unit tests for ranking profile normalization, invalid input and overlap suppression
 - [ ] Optional authorized source adapters after terms review
 
 ## MVP acceptance
