@@ -122,7 +122,7 @@ private fun ClipForgeHome() {
     }
     fun save(clip: ClipCandidate) {
         pending = clip
-        savePicker.launch("ClipForge_\${clip.startMs / 1000}s.mp4")
+        savePicker.launch("ClipForge_${clip.startMs / 1000}s.mp4")
     }
 
     Surface(Modifier.fillMaxSize(), color = Ink) {
@@ -287,8 +287,14 @@ private fun ClipForgeHome() {
                             message = "Finding strong moments…"
                             val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration) }
                             clips = found
+                            activeProjectId?.let { id ->
+                                withContext(Dispatchers.IO) {
+                                    ProjectLibrary.get(context).saveAnalysis(id, transcript, found)
+                                }
+                                savedProjects = withContext(Dispatchers.IO) { ProjectLibrary.get(context).listProjects() }
+                            }
                             message = if (found.isEmpty()) "No clear speech highlights found. Try a video with spoken audio."
-                                else "Analysis complete · \${found.size} clips ranked"
+                                else "Analysis complete · ${found.size} clips ranked · project saved"
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
                     }
@@ -323,13 +329,13 @@ private fun ClipForgeHome() {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(32.dp).background(Violet.copy(alpha = .18f), CircleShape), contentAlignment = Alignment.Center) {
-                                    Text("\${index + 1}", color = Violet, fontWeight = FontWeight.Bold)
+                                    Text("${index + 1}", color = Violet, fontWeight = FontWeight.Bold)
                                 }
                                 Column(Modifier.weight(1f).padding(start = 9.dp)) {
                                     Text(clip.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                                    Text("\${time(clip.startMs)} – \${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
+                                    Text("${time(clip.startMs)} – ${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
                                 }
-                                Text("\${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                Text("${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                             }
                             Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -347,9 +353,9 @@ private fun ClipForgeHome() {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("QUICK CLIP EDITOR", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(clip.title, fontWeight = FontWeight.Bold)
-                        Text("Start · \${time(editStart)}", color = Muted, fontSize = 12.sp)
+                        Text("Start · ${time(editStart)}", color = Muted, fontSize = 12.sp)
                         Slider(editStart.toFloat(), { editStart = it.toLong() }, valueRange = 0f..(editEnd - 1000).coerceAtLeast(0).toFloat())
-                        Text("End · \${time(editEnd)}", color = Muted, fontSize = 12.sp)
+                        Text("End · ${time(editEnd)}", color = Muted, fontSize = 12.sp)
                         Slider(editEnd.toFloat(), { editEnd = it.toLong() }, valueRange = (editStart + 1000).toFloat()..duration.coerceAtLeast(editStart + 1000).toFloat())
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { editing = null }, modifier = Modifier.weight(1f)) { Text("Close") }
