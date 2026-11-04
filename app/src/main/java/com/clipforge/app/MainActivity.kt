@@ -109,7 +109,15 @@ private fun ClipForgeHome() {
         if (dest != null && src != null && clip != null) {
             ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
                 onStatus = { exportMessage = it },
-                onFinished = { _, result -> exportMessage = result; pending = null })
+                onFinished = { success, result ->
+                    exportMessage = result
+                    if (success && activeProjectId != null) {
+                        val saved = ProjectLibrary.get(context).getHighlights(activeProjectId!!)
+                            .firstOrNull { it.startMs == clip.startMs && it.endMs == clip.endMs }
+                        if (saved != null) ProjectLibrary.get(context).recordExport(saved.id, dest.toString())
+                    }
+                    pending = null
+                })
         } else { pending = null; if (dest == null) exportMessage = "Export cancelled." }
     }
     fun save(clip: ClipCandidate) {
@@ -189,7 +197,11 @@ private fun ClipForgeHome() {
                                 linkMessage = "Checking secure video link…"
                                 try {
                                     val imported = DirectVideoImporter.download(context, linkInput) { done, total ->
-                                        if (total != null && total > 0L) linkProgress = (done.toFloat() / total).coerceIn(0f, 1f)
+                                        if (total != null && total > 0L) {
+                                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                linkProgress = (done.toFloat() / total).coerceIn(0f, 1f)
+                                            }
+                                        }
                                     }
                                     video = imported
                                     duration = 0L
