@@ -12,10 +12,14 @@
 - [x] Add first-run model download with SHA-256 verification and progress UI
 - [ ] Decode selected video audio to mono 16 kHz PCM
 - [ ] Connect video audio to Whisper and show timestamped transcript
-- [ ] Transcript-based highlight ranking
+- [x] Transcript-based highlight ranking (heuristic baseline)
+- [ ] Context-aware highlight ranking validation on real videos
 
 ## Smart clips
-- [ ] Candidate review and manual adjustment
+- [x] Candidate review and manual adjustment
+- [x] Save analyzed project metadata and highlights locally
+- [x] Direct HTTPS video-file import (supported MIME types only)
+- [ ] Full project editing-session restoration
 - [ ] Editable captions
 - [ ] 9:16 / 16:9 / 1:1 presets
 - [ ] Optional MediaPipe face-aware crop
