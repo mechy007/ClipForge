@@ -54,6 +54,12 @@ private fun ClipForgeHome() {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var video by remember { mutableStateOf<Uri?>(null) }
+    val projectDb = remember { ProjectDatabase(context) }
+    var savedProjects by remember { mutableStateOf(projectDb.listProjects()) }
+    var savedProjectHighlights by remember { mutableStateOf<List<SavedHighlight>>(emptyList()) }
+    var linkText by remember { mutableStateOf("") }
+    var linkStatus by remember { mutableStateOf("") }
+    var importingLink by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(0L) }
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var downloading by remember { mutableStateOf(false) }
@@ -114,6 +120,39 @@ private fun ClipForgeHome() {
                 }
             }
             Text("Your next great moment.", fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            OutlinedTextField(value = linkText, onValueChange = { linkText = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Direct video link (MP4/WebM)") }, singleLine = true)
+            OutlinedButton(onClick = {
+                scope.launch {
+                    importingLink = true; linkStatus = "Checking direct video link…"
+                    try {
+                        val imported = DirectVideoImporter.download(context, linkText) { p ->
+                            linkStatus = if (p.totalBytes != null) "Downloaded ${p.downloadedBytes / 1_048_576} / ${p.totalBytes / 1_048_576} MB" else "Downloaded ${p.downloadedBytes / 1_048_576} MB"
+                        }
+                        video = imported; duration = 0L; clips = emptyList(); linkStatus = "Video imported. Preview it and run AI analysis."
+                    } catch (e: Exception) { linkStatus = e.localizedMessage ?: "Video import failed." }
+                    finally { importingLink = false }
+                }
+            }, enabled = linkText.isNotBlank() && !importingLink, modifier = Modifier.fillMaxWidth()) { Text(if (importingLink) "Importing video…" else "Import from direct link") }
+            if (linkStatus.isNotBlank()) Text(linkStatus, color = Muted, fontSize = 11.sp)
+            if (savedProjects.isNotEmpty()) {
+                Text("Saved projects", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                savedProjects.take(8).forEach { project ->
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(14.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(project.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text("${project.status} · ${project.durationMs / 60000} min · ${projectDb.listHighlights(project.id).size} highlights", color = Muted, fontSize = 10.sp)
+                            }
+                            TextButton(onClick = {
+                                video = Uri.parse(project.sourceUri); duration = project.durationMs
+                                savedProjectHighlights = projectDb.listHighlights(project.id)
+                                clips = savedProjectHighlights.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score) }
+                                message = "Restored saved project."
+                            }) { Text("Open") }
+                        }
+                    }
+                }
+            }
             Text("Find highlights. Create clips. Keep your work on your device.", color = Muted, fontSize = 13.sp)
 
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
