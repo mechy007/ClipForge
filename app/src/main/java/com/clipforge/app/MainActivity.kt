@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -27,6 +28,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.LiveTv
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,11 +53,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private val Ink = Color(0xFF101318)
-private val Panel = Color(0xFF1B2028)
-private val Violet = Color(0xFFB7C9FF)
-private val Muted = Color(0xFFBFC5D0)
-private val Cyan = Color(0xFF8FD8D2)
+private val Ink = ClipForgePalette.Background
+private val Panel = ClipForgePalette.Surface
+private val Accent = ClipForgePalette.Accent
+private val Muted = ClipForgePalette.Muted
+private val AccentSoft = ClipForgePalette.AccentSoft
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -66,10 +69,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val liveRecording = intent.getStringExtra(EXTRA_LIVE_RECORDING_PATH)
             ?.let { Uri.fromFile(java.io.File(it)) }
+        window.statusBarColor = android.graphics.Color.rgb(11, 13, 11)
+        window.navigationBarColor = android.graphics.Color.rgb(21, 25, 21)
         setContent {
-            val scheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) dynamicDarkColorScheme(this)
-                else darkColorScheme(primary = Violet, secondary = Color(0xFF9CCBFA), tertiary = Cyan, background = Ink, surface = Panel)
-            MaterialTheme(colorScheme = scheme) { ClipForgeHome(liveRecording) }
+            ClipForgeTheme { ClipForgeHome(liveRecording) }
         }
     }
 }
@@ -143,6 +146,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
     var pendingCaptionCues by remember { mutableStateOf<List<CaptionCue>?>(null) }
     var editing by remember { mutableStateOf<ClipCandidate?>(null) }
+    var previewingClip by remember { mutableStateOf<ClipCandidate?>(null) }
     var editStart by remember { mutableLongStateOf(0L) }
     var editEnd by remember { mutableLongStateOf(0L) }
     var editorStartMs by rememberSaveable { mutableLongStateOf(0L) }
@@ -164,6 +168,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     LaunchedEffect(video) {
         editorStartMs = 0L
         editorEndMs = 0L
+        previewingClip = null
     }
 
     LaunchedEffect(video) {
@@ -300,44 +305,90 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         }
     }
     Surface(Modifier.fillMaxSize(), color = Ink) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(42.dp).background(Violet.copy(alpha = .18f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.ContentCut, null, tint = Violet)
+        Scaffold(
+            containerColor = Ink,
+            topBar = {
+                Column(
+                    Modifier.fillMaxWidth().background(Ink).statusBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(38.dp).background(Accent, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.ContentCut, contentDescription = null, tint = Ink)
+                        }
+                        Column(Modifier.padding(start = 10.dp)) {
+                            Text("ClipForge", fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp)
+                            Text("LOCAL-FIRST CLIP STUDIO", color = Muted, fontSize = 9.sp, letterSpacing = 1.15.sp)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Surface(color = Panel, shape = RoundedCornerShape(20.dp)) {
+                            Text("ON-DEVICE AI", Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
-                    Column(Modifier.padding(start = 10.dp)) {
-                        Text("ClipForge", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.4).sp)
-                        Text("MOBILE VIDEO STUDIO", color = Muted, fontSize = 9.sp, letterSpacing = 1.1.sp)
-                    }
+                    Spacer(Modifier.height(15.dp))
+                    Text(
+                        when (activeSection) {
+                            "Studio" -> "Long video in. Shorts out."
+                            "Highlights" -> "Your best moments."
+                            "Projects" -> "Your clip library."
+                            "Live" -> "Live activity signals."
+                            else -> "Fine-tune your clip."
+                        },
+                        color = Color(0xFFF0F2E8), fontSize = 25.sp, lineHeight = 29.sp,
+                        fontWeight = FontWeight.Bold, letterSpacing = (-0.65).sp, maxLines = 2
+                    )
+                    Text(
+                        when (activeSection) {
+                            "Studio" -> "Import a recording, find standout moments, and export Shorts."
+                            "Highlights" -> "Review the picks. Keep the moments worth sharing."
+                            "Projects" -> "Pick up where you left off."
+                            "Live" -> "Use public chat activity to find moments in an authorised recording."
+                            else -> "Adjust timing and framing before export."
+                        },
+                        Modifier.padding(top = 4.dp), color = Muted, fontSize = 11.sp, lineHeight = 16.sp
+                    )
                 }
-                Spacer(Modifier.weight(1f))
-                Surface(color = Color(0xFF20202A), shape = RoundedCornerShape(10.dp)) {
-                    Text("ON-DEVICE AI", Modifier.padding(horizontal = 9.dp, vertical = 6.dp), color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            },
+            bottomBar = {
+                val destinations = listOf(
+                    Triple("Studio", "New", Icons.Default.Movie),
+                    Triple("Highlights", "Clips", Icons.Default.AutoAwesome),
+                    Triple("Projects", "Library", Icons.Default.FolderOpen),
+                    Triple("Live", "Live", Icons.Default.LiveTv),
+                    Triple("Editor", "Edit", Icons.Default.Tune)
+                )
+                NavigationBar(containerColor = Panel, contentColor = Color(0xFFF0F2E8), tonalElevation = 0.dp) {
+                    destinations.forEach { (section, label, icon) ->
+                        NavigationBarItem(
+                            selected = activeSection == section,
+                            onClick = {
+                                activeSection = section
+                                if (section != "Highlights") previewingClip = null
+                            },
+                            icon = { Icon(icon, contentDescription = label) },
+                            label = { Text(label, fontSize = 10.sp, maxLines = 1) },
+                            alwaysShowLabel = true,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Accent, selectedTextColor = Accent,
+                                indicatorColor = Accent.copy(alpha = 0.13f),
+                                unselectedIconColor = Muted, unselectedTextColor = Muted
+                            )
+                        )
+                    }
                 }
             }
-            Text("Make every moment count.", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf("Studio", "Editor", "Highlights", "Projects", "Live").forEach { section ->
-                    Box(
-                        Modifier.weight(1f).clip(RoundedCornerShape(11.dp))
-                            .background(if (activeSection == section) Violet.copy(alpha = .2f) else Panel)
-                            .selectable(selected = activeSection == section, role = Role.Tab) { activeSection = section }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(section, color = if (activeSection == section) Color.White else Muted,
-                            fontSize = 10.sp, fontWeight = if (activeSection == section) FontWeight.Bold else FontWeight.Medium)
-                    }
-                }
-            }
+        ) { contentPadding ->
+            Column(
+                Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState())
+                    .padding(horizontal = 18.dp, vertical = 15.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
             if (activeSection == "Editor") {
                 val source = video
                 when {
                     source == null -> Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Default.Movie, null, tint = Violet, modifier = Modifier.size(30.dp))
+                            Icon(Icons.Default.Movie, null, tint = Accent, modifier = Modifier.size(30.dp))
                             Text("Mini editor", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             Text("Import a video to open the timeline editor.", color = Muted, fontSize = 12.sp)
                             Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth()) {
@@ -404,7 +455,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             modifier = Modifier.fillMaxWidth()
                         ) { Text(if (faceTrackingBusy) "Detecting faces…" else "Analyze face tracking") }
                         Text(faceTrackingMessage, color = Muted, fontSize = 11.sp)
-                        Text("Face tracking currently analyzes and smooths the crop path; export still uses center framing.", color = Muted, fontSize = 10.sp)
+                        Text("Preview analysis only: face tracking is not yet applied to exported framing.", color = Muted, fontSize = 10.sp)
                         VideoPreview(
                             uri = video!!,
                             onDuration = { if (it > 0L) { duration = it; previewError = null } },
@@ -422,7 +473,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             listOf("9:16" to (9f / 16f), "16:9" to (16f / 9f), "1:1" to 1f).forEach { (label, ratio) ->
                                 Box(
                                     Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
-                                        .background(if (exportAspectRatio == ratio) Violet.copy(alpha = .22f) else Ink)
+                                        .background(if (exportAspectRatio == ratio) Accent.copy(alpha = .22f) else Ink)
                                         .selectable(
                                             selected = exportAspectRatio == ratio,
                                             enabled = !batchExporting,
@@ -468,7 +519,16 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             if (linkStatus.isNotBlank()) Text(linkStatus, color = Muted, fontSize = 11.sp)
             }
             if (activeSection == "Projects") {
-                if (savedProjects.isEmpty()) Text("No saved projects yet. Import a video and analyse it first.", color = Muted)
+                if (savedProjects.isEmpty()) {
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.FolderOpen, null, tint = Accent, modifier = Modifier.size(28.dp))
+                            Text("Your library is empty", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                            Text("Completed analyses are saved here so you can reopen their highlights and transcripts.", color = Muted, fontSize = 12.sp)
+                            Button(onClick = { activeSection = "Studio" }, modifier = Modifier.fillMaxWidth()) { Text("Start a project") }
+                        }
+                    }
+                }
             if (savedProjects.isNotEmpty()) {
                 Text("Saved projects", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 savedProjects.take(8).forEach { project ->
@@ -496,20 +556,13 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             if (activeSection == "Live") {
             Text("Your live tools", fontSize = 21.sp, fontWeight = FontWeight.Bold)
 
-            Button(
-                onClick = {
-                    val liveSessionId = activeLiveSessionId ?: -1L
-                    context.startActivity(android.content.Intent(context, ScreenCaptureSetupActivity::class.java).putExtra(MainActivity.EXTRA_LIVE_SESSION_ID, liveSessionId))
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Screen / Game Capture · RTMPS + internal audio") }
-            Button(
-                onClick = {
-                    val liveSessionId = activeLiveSessionId ?: -1L
-                    context.startActivity(android.content.Intent(context, CreatorLiveStudioActivity::class.java).putExtra(MainActivity.EXTRA_LIVE_SESSION_ID, liveSessionId))
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Open Creator Live Studio · Camera + local recording") }
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("WHAT LIVE MODE DOES", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text("ClipForge can monitor public chat activity and mark likely moments. A YouTube watch URL does not give the app a video recording.", color = Color(0xFFE0E4D9), fontSize = 12.sp, lineHeight = 17.sp)
+                    Text("Import an authorised recording to turn those markers into clips. Check the broadcast-to-recording offset before exporting.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+                }
+            }
             if (liveMarkers.isNotEmpty()) {
                 Text("${liveMarkers.size} live highlight marker(s) collected", color = Muted, fontSize = 12.sp)
                 Button(
@@ -569,7 +622,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             if (activeSection == "Studio") {
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-                    Text("START A PROJECT", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
+                    Text("START A PROJECT", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
                     Text(if (video == null) "Import your long-form video" else "Your video is ready", fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Text("Podcasts, gameplay, interviews and more. Choose a video stored on your phone.", color = Muted, fontSize = 12.sp)
                     Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
@@ -580,8 +633,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AutoAwesome, null, tint = Violet)
-                        Text("  ON-DEVICE AI ENGINE", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.AutoAwesome, null, tint = Accent)
+                        Text("  ON-DEVICE AI ENGINE", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
                         Text(if (ready) "READY" else "SETUP", color = if (ready) Color(0xFF75D6A2) else Muted, fontSize = 10.sp)
                     }
@@ -648,7 +701,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
 
             if (video != null) {
-                Text("TARGET SHORT LENGTH", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("TARGET SHORT LENGTH", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     listOf(15_000L to "15 sec", 30_000L to "30 sec", 45_000L to "45 sec", 60_000L to "60 sec").forEach { (lengthMs, label) ->
                         FilterChip(
@@ -731,10 +784,20 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
 
             }
+            if (activeSection == "Highlights" && clips.isEmpty()) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Icon(Icons.Default.AutoAwesome, null, tint = Accent, modifier = Modifier.size(28.dp))
+                        Text("No clips yet", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(if (video == null) "Import a long video first. ClipForge will transcribe it locally and rank moments for you." else "Your source is ready. Run the AI analysis to find moments worth clipping.", color = Muted, fontSize = 12.sp, lineHeight = 17.sp)
+                        Button(onClick = { activeSection = "Studio" }, modifier = Modifier.fillMaxWidth()) { Text(if (video == null) "Go to import" else "Open clip studio") }
+                    }
+                }
+            }
             if (activeSection == "Highlights" && transcriptSegments.isNotEmpty()) {
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("TRANSCRIPT", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("TRANSCRIPT", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text("${transcriptSegments.size} timestamped speech segments available", color = Muted, fontSize = 11.sp)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
@@ -767,7 +830,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("AI Highlights", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text("${clips.size} moments ranked · choose what to export", color = Muted, fontSize = 11.sp)
+                        Text("${clips.size} moments ranked · ${selectedClips.size} selected", color = Muted, fontSize = 11.sp)
+                        Text("Signal scores compare content cues; they do not predict views or virality.", color = Muted, fontSize = 10.sp)
                     }
                     TextButton(
                         onClick = { selectedClips = if (selectedClips.containsAll(reviewableClips)) emptySet() else reviewableClips.toSet() },
@@ -809,23 +873,37 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 Button(onClick = { batchPicker.launch(null) }, enabled = selectedClips.isNotEmpty() && !batchExporting, modifier = Modifier.fillMaxWidth()) {
                     Text(if (batchExporting) "Exporting selected clips…" else "Export ${selectedClips.size} selected clips")
                 }
-                if (batchExporting) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                if (batchExporting) {
+                    val fraction = if (batchStatus.total > 0) batchStatus.completed.toFloat() / batchStatus.total else 0f
+                    LinearProgressIndicator(progress = fraction.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth())
+                    Text("Verified ${batchStatus.completed} of ${batchStatus.total} clips", color = Muted, fontSize = 11.sp)
+                }
+                if (batchStatus.message.startsWith("Batch export stopped:")) {
+                    OutlinedButton(
+                        onClick = { batchPicker.launch(null) },
+                        enabled = !batchExporting && selectedClips.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Retry remaining clips") }
+                }
                 clips.forEachIndexed { index, clip ->
                     Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = clip in selectedClips, onCheckedChange = { checked -> selectedClips = if (checked) selectedClips + clip else selectedClips - clip }, enabled = !batchExporting)
-                                Box(Modifier.size(32.dp).background(Violet.copy(alpha = .18f), CircleShape), contentAlignment = Alignment.Center) {
-                                    Text("${index + 1}", color = Violet, fontWeight = FontWeight.Bold)
+                                Box(Modifier.size(32.dp).background(Accent.copy(alpha = .18f), CircleShape), contentAlignment = Alignment.Center) {
+                                    Text("${index + 1}", color = Accent, fontWeight = FontWeight.Bold)
                                 }
                                 Column(Modifier.weight(1f).padding(start = 9.dp)) {
                                     Text(clip.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
                                     Text("${time(clip.startMs)} – ${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
                                 }
-                                Text("${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${clip.score}", color = Accent, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                    Text("SIGNAL", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+                                }
                             }
-                            Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
-                            if (clip.reason.isNotBlank()) Text(clip.reason, color = Cyan, fontSize = 10.sp, maxLines = 2)
+                            Text(clip.hook, color = Color(0xFFE0E4D9), fontSize = 11.sp, maxLines = 3)
+                            if (clip.reason.isNotBlank()) Text(clip.reason, color = AccentSoft, fontSize = 10.sp, maxLines = 2)
                             val decision = reviewed[clip] ?: ClipReviewDecision.PENDING
                             Text("Review · ${decision.name.lowercase().replaceFirstChar { it.uppercase() }}", color = when (decision) {
                                 ClipReviewDecision.APPROVED -> Color(0xFF6EE7B7)
@@ -844,20 +922,51 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 }, modifier = Modifier.weight(1f), enabled = !batchExporting) { Text("Reject") }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit") }
-                                OutlinedButton(onClick = { saveCaptions(clip) }, modifier = Modifier.weight(1f)) { Text("SRT") }
-                                Button(onClick = { save(clip) }, modifier = Modifier.weight(1f)) {
-                                    Icon(Icons.Default.PlayArrow, null); Text("  Export")
+                                OutlinedButton(onClick = { previewingClip = clip }, modifier = Modifier.weight(1f), enabled = video != null) {
+                                    Icon(Icons.Default.PlayArrow, null); Text("  Preview")
                                 }
+                                OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit timing") }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { saveCaptions(clip) }, modifier = Modifier.weight(1f)) { Text("Export SRT") }
+                                Button(onClick = { save(clip) }, modifier = Modifier.weight(1f)) { Text("Export MP4") }
                             }
                         }
                     }
                 }
             }
+            if (activeSection == "Highlights") previewingClip?.let { clip ->
+                val source = video
+                if (source != null) {
+                    AlertDialog(
+                        onDismissRequest = { previewingClip = null },
+                        title = { Text(clip.title, fontWeight = FontWeight.Bold) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    "${time(clip.startMs)} – ${time(clip.endMs)} · ${((clip.endMs - clip.startMs) / 1000L)} sec",
+                                    color = Muted, fontSize = 11.sp
+                                )
+                                VideoPreview(
+                                    uri = source,
+                                    onDuration = { },
+                                    onError = { previewError = it },
+                                    retryKey = previewRetryKey,
+                                    aspectRatio = exportAspectRatio,
+                                    startAtMs = clip.startMs,
+                                    endAtMs = clip.endMs
+                                )
+                                Text(clip.hook, color = Muted, fontSize = 11.sp, maxLines = 4)
+                            }
+                        },
+                        confirmButton = { TextButton(onClick = { previewingClip = null }) { Text("Close") } }
+                    )
+                }
+            }
             if (activeSection == "Highlights") editing?.let { clip ->
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("QUICK CLIP EDITOR", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("QUICK CLIP EDITOR", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(clip.title, fontWeight = FontWeight.Bold)
                         Text("Start · ${time(editStart)}", color = Muted, fontSize = 12.sp)
                         Slider(editStart.toFloat(), { editStart = it.toLong() }, valueRange = 0f..(editEnd - 1000).coerceAtLeast(0).toFloat())
@@ -889,7 +998,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             if (activeSection == "Studio" && video == null) {
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Movie, null, tint = Violet, modifier = Modifier.size(27.dp))
+                        Icon(Icons.Default.Movie, null, tint = Accent, modifier = Modifier.size(27.dp))
                         Text("Your clip studio", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                         Text("Import a video to preview it, transcribe speech, rank standout moments, fine-tune clips and export MP4s.", color = Muted, fontSize = 12.sp)
                     }
@@ -899,10 +1008,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 Text("PRIVATE · ON-DEVICE WORKFLOW", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
                 Text("v0.6.2", color = Muted, fontSize = 10.sp)
             }
+            }
         }
     }
 }
-
 private fun formatElapsed(seconds: Long): String = "%d:%02d".format(seconds / 60L, seconds % 60L)
 
 private fun time(ms: Long): String = "%d:%02d".format(ms / 60_000L, (ms / 1000L) % 60L)
@@ -913,10 +1022,12 @@ private fun VideoPreview(
     onDuration: (Long) -> Unit,
     onError: (String) -> Unit,
     retryKey: Int,
-    aspectRatio: Float = 9f / 16f
+    aspectRatio: Float = 9f / 16f,
+    startAtMs: Long? = null,
+    endAtMs: Long? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val player = remember(uri, retryKey) {
+    val player = remember(uri, retryKey, startAtMs, endAtMs) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
         }
@@ -931,6 +1042,7 @@ private fun VideoPreview(
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
                     durationMs = player.duration.coerceAtLeast(0L)
+                    startAtMs?.let { player.seekTo(it.coerceIn(0L, durationMs.coerceAtLeast(0L))) }
                     onDuration(durationMs)
                 }
             }
@@ -950,6 +1062,10 @@ private fun VideoPreview(
         while (true) {
             if (!isSeeking) positionMs = player.currentPosition.coerceAtLeast(0L)
             if (player.duration > 0L) durationMs = player.duration
+            if (endAtMs != null && player.isPlaying && player.currentPosition >= endAtMs) {
+                player.pause()
+                player.seekTo(endAtMs.coerceIn(0L, durationMs.coerceAtLeast(0L)))
+            }
             delay(300L)
         }
     }
