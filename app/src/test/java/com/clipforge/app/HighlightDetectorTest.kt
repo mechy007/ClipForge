@@ -64,12 +64,12 @@ class LiveMarkerTimelineTest {
 
     @Test
     fun rejectsMarkersBeforeRecordingStart() {
-        assertEquals(null, LiveMarkerTimeline.toRecordingTime(29_999L, 30_000L))
+        assertTrue(LiveMarkerTimeline.toRecordingTime(29_999L, 30_000L) == null)
     }
 
     @Test
     fun rejectsNegativeBroadcastTime() {
-        assertEquals(null, LiveMarkerTimeline.toRecordingTime(-1L, 0L))
+        assertTrue(LiveMarkerTimeline.toRecordingTime(-1L, 0L) == null)
     }
 
     @Test
