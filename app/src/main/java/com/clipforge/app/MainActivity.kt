@@ -260,8 +260,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             BatchExportCoordinator.start(
                 context, treeUri, source, chosen, exportAspectRatio,
                 if (burnCaptions) transcriptSegments else emptyList(),
-                faceTrackingPath = faceTrackingPath,
-                runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN)
+                runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
+                faceTrackingPath = faceTrackingPath
             )
         }
     }
