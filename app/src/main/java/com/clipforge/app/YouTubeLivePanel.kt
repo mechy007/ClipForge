@@ -62,6 +62,7 @@ fun YouTubeLivePanel(
             OutlinedTextField(
                 value = videoInput,
                 onValueChange = { videoInput = it },
+                enabled = monitorJob?.isActive != true,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("YouTube Live URL or video ID") },
                 singleLine = true
@@ -69,6 +70,7 @@ fun YouTubeLivePanel(
             OutlinedTextField(
                 value = apiKey,
                 onValueChange = { apiKey = it },
+                enabled = monitorJob?.isActive != true,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("YouTube Data API key") },
                 singleLine = true,
@@ -87,6 +89,7 @@ fun YouTubeLivePanel(
                         status = "Monitoring stopped. Existing markers are kept on this screen."
                     } else {
                         onMonitoringStarted()
+                        sessionTitle = ""
                         markers = emptyList()
                         status = "Connecting to YouTube Live…"
                         monitorJob = scope.launch {
