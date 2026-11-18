@@ -226,7 +226,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         if (video == null || duration <= 0L) {
                             message = "Import your authorised original recording before creating clips from live markers."
                         } else {
-                            val recordingOffsetMs = projectDb.listLiveSessions().firstOrNull()?.recordingOffsetMs ?: 0L
+                            val liveSession = projectDb.listLiveSessions().firstOrNull()
+                            val recordingOffsetMs = liveSession?.recordingOffsetMs ?: 0L
+                            val hasRecordingStart = (liveSession?.recordingStartMs ?: 0L) > 0L
                             val candidates = liveMarkers.mapNotNull { marker ->
                                 val markerTimeMs = LiveMarkerTimeline.toRecordingTime(marker.startMs, recordingOffsetMs)
                                     ?: return@mapNotNull null
@@ -245,7 +247,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             } else {
                                 clips = (clips + candidates).distinctBy { it.startMs to it.endMs }
                                     .sortedByDescending { it.score }
-                                message = if (recordingOffsetMs == 0L) "Live markers added. Recording timeline uses the broadcast start; verify alignment before exporting." else "Live markers automatically aligned to the local recording start. Review candidates before exporting."
+                                message = if (hasRecordingStart) "Live markers automatically aligned to the local recording start. Review candidates before exporting." else "No linked recording start time was saved. Markers use broadcast-relative times; verify alignment manually before exporting."
                             }
                         }
                     },
