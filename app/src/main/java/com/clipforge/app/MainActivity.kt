@@ -94,6 +94,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
     var selectedClips by remember { mutableStateOf<Set<ClipCandidate>>(emptySet()) }
     var batchExporting by remember { mutableStateOf(false) }
+    var activeSection by remember { mutableStateOf("Studio") }
     var liveMarkers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
     var activeLiveSessionId by remember { mutableStateOf<Long?>(null) }
     var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
@@ -185,6 +186,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
             }
             Text("Your next great moment.", fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                listOf("Studio", "Highlights", "Projects", "Live").forEach { section ->
+                    FilterChip(selected = activeSection == section, onClick = { activeSection = section }, label = { Text(section) })
+                }
+            }
+            if (activeSection == "Studio") {
             OutlinedTextField(value = linkText, onValueChange = { linkText = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Direct video link (MP4/WebM)") }, singleLine = true)
             OutlinedButton(onClick = {
                 scope.launch {
@@ -199,6 +206,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
             }, enabled = linkText.isNotBlank() && !importingLink, modifier = Modifier.fillMaxWidth()) { Text(if (importingLink) "Importing video…" else "Import from direct link") }
             if (linkStatus.isNotBlank()) Text(linkStatus, color = Muted, fontSize = 11.sp)
+            }
+            if (activeSection == "Projects") {
+                if (savedProjects.isEmpty()) Text("No saved projects yet. Import a video and analyse it first.", color = Muted)
             if (savedProjects.isNotEmpty()) {
                 Text("Saved projects", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 savedProjects.take(8).forEach { project ->
@@ -216,12 +226,15 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 selectedClips = clips.toSet()
                                 transcriptSegments = projectDb.listTranscript(project.id)
                                 message = "Restored saved project."
+                                if (clips.isNotEmpty()) activeSection = "Highlights"
                             }) { Text("Open") }
                         }
                     }
                 }
             }
-            Text("Find highlights. Create clips. Keep your work on your device.", color = Muted, fontSize = 13.sp)
+            }
+            if (activeSection == "Live") {
+            Text("Your live tools", fontSize = 21.sp, fontWeight = FontWeight.Bold)
 
             Button(
                 onClick = {
@@ -287,6 +300,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 ) { Text("Create clips from live markers") }
             }
 
+            }
+            if (activeSection == "Studio") {
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                     Text("START A PROJECT", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
@@ -366,6 +381,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             savedProjects = persisted.second
                             clips = found
                             selectedClips = found.toSet()
+                            if (found.isNotEmpty()) activeSection = "Highlights"
                             message = if (found.isEmpty()) "No clear speech highlights found. Try a video with spoken audio."
                                 else "Analysis complete · ${found.size} clips ranked"
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
@@ -394,7 +410,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 Text(message, color = Muted, fontSize = 12.sp)
             }
 
-            if (clips.isNotEmpty()) {
+            }
+            if (activeSection == "Highlights" && clips.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("AI Highlights", fontSize = 21.sp, fontWeight = FontWeight.Bold)
@@ -434,7 +451,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                 }
             }
-            editing?.let { clip ->
+            if (activeSection == "Highlights") editing?.let { clip ->
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("QUICK CLIP EDITOR", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -452,7 +469,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
             }
             if (exportMessage.isNotBlank()) Text(exportMessage, color = Muted, fontSize = 12.sp)
-            if (video == null) {
+            if (activeSection == "Studio" && video == null) {
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Default.Movie, null, tint = Violet, modifier = Modifier.size(27.dp))
