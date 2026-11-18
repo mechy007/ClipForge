@@ -198,12 +198,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         savedProjectHighlights = restored.first
         clips = restored.first.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score, it.reason) }
         transcriptSegments = restored.second
-        selectedClips = clips.toSet()
         reviewed = restored.first.mapNotNull { saved ->
             val candidate = ClipCandidate(saved.startMs, saved.endMs, saved.title, saved.transcript, saved.score, saved.reason)
             val decision = runCatching { ClipReviewDecision.valueOf(saved.reviewStatus) }.getOrDefault(ClipReviewDecision.PENDING)
             candidate to decision
         }.toMap()
+        selectedClips = clips.filter { reviewed[it] != ClipReviewDecision.REJECTED }.toSet()
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -348,6 +348,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             modifier = Modifier.fillMaxWidth()
                         ) { Text(if (faceTrackingBusy) "Detecting faces…" else "Analyze face tracking") }
                         Text(faceTrackingMessage, color = Muted, fontSize = 11.sp)
+                        Text("Face tracking currently analyzes and smooths the crop path; export still uses center framing.", color = Muted, fontSize = 10.sp)
                         VideoPreview(
                             uri = video!!,
                             onDuration = { if (it > 0L) { duration = it; previewError = null } },
