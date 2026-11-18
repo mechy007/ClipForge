@@ -38,30 +38,45 @@ object PassiveClipInsights {
 
         val relevant = segments.filter { it.startMs < endMs && it.endMs > startMs }
             .sortedBy { it.startMs }
-        val first = relevant.firstOrNull()
-        val last = relevant.lastOrNull()
-        var refinedStart = first?.let { (it.startMs - 650L).coerceAtLeast(0L) } ?: startMs
-        var refinedEnd = last?.let { (it.endMs + 650L).coerceAtMost(durationMs) } ?: endMs
+        val first = relevant.minByOrNull { it.startMs }
+        val refinedStart = first?.let { (it.startMs - 650L).coerceAtLeast(0L) }
+            ?: startMs.coerceAtLeast(0L)
+        val latestSpeechEnd = relevant.maxOfOrNull { it.endMs }
+        var refinedEnd = latestSpeechEnd?.let { (it + 650L).coerceAtMost(durationMs) }
+            ?: endMs.coerceAtMost(durationMs)
+
         // Keep a sensible window when Whisper timestamps are sparse or malformed.
-        if (refinedEnd - refinedStart < 8_000L) {
-            refinedStart = startMs.coerceAtLeast(0L)
+        var finalStart = refinedStart
+        if (refinedEnd - finalStart < 8_000L) {
+            finalStart = startMs.coerceAtLeast(0L)
             refinedEnd = endMs.coerceAtMost(durationMs)
         }
-        if (refinedEnd <= refinedStart) {
-            refinedStart = startMs.coerceAtLeast(0L)
-            refinedEnd = min(durationMs, max(refinedStart + 1L, endMs))
+        if (refinedEnd <= finalStart) {
+            finalStart = startMs.coerceAtLeast(0L)
+            refinedEnd = min(durationMs, max(finalStart + 1L, endMs))
         }
 
         val sentence = text.split(Regex("(?<=[.!?])\\s+")).firstOrNull().orEmpty()
-            .trim().trim('"', '\'')
+            .trim().trim('"', '\\'')
         val title = sentence.take(64).ifBlank { "$category highlight" }
-        val gaps = relevant.zipWithNext().count { (a, b) -> b.startMs - a.endMs > 2_000L }
+
+        var latestCoveredEnd = Long.MIN_VALUE
+        var gaps = 0
+        relevant.forEach { segment ->
+            if (latestCoveredEnd != Long.MIN_VALUE && segment.startMs - latestCoveredEnd > 2_000L) {
+                gaps++
+            }
+            latestCoveredEnd = max(latestCoveredEnd, segment.endMs)
+        }
+
+        val boundsChanged = finalStart != startMs || refinedEnd != endMs
         val note = when {
             relevant.size < 2 -> "Short transcript sample; review the cut manually."
-            gaps >= 2 -> "Contains pauses; check that the selected moment flows naturally."
+            gaps > 0 -> "Contains pauses; check that the selected moment flows naturally."
             words.size < 20 -> "Concise moment; verify it has enough context."
+            !boundsChanged -> "Original clip window retained because speech timestamps did not provide a safer cut; review manually."
             else -> "Transcript boundaries refined automatically; review before publishing."
         }
-        return PassiveClipInsight(refinedStart, refinedEnd, category, title, note)
+        return PassiveClipInsight(finalStart, refinedEnd, category, title, note)
     }
 }
