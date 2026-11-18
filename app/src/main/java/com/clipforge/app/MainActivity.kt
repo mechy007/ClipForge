@@ -146,6 +146,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var previewError by remember(video) { mutableStateOf<String?>(null) }
     var videoDisplayName by remember(video) { mutableStateOf("") }
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
+    var burnCaptions by rememberSaveable { mutableStateOf(true) }
+    var captionPreset by rememberSaveable { mutableStateOf(CaptionPreset.CLEAN.name) }
+    var reviewed by remember { mutableStateOf<Map<ClipCandidate, ClipReviewDecision>>(emptyMap()) }
+    var faceTrackingBusy by remember { mutableStateOf(false) }
+    var faceTrackingMessage by remember { mutableStateOf("Face tracking analyzes sampled frames on-device.") }
+    var faceTrackingPath by remember { mutableStateOf<List<CropFocus>>(emptyList()) }
 
     LaunchedEffect(video) {
         val selected = video
@@ -205,8 +211,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
         val src = video; val clip = pending
         if (dest != null && src != null && clip != null) {
+            val cues = if (burnCaptions) CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs) else emptyList()
             ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
                 aspectRatio = exportAspectRatio,
+                captionCues = cues,
+                captionPreset = runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
                 onStatus = { exportMessage = it },
                 onFinished = { _, result -> exportMessage = result; pending = null })
         } else { pending = null; if (dest == null) exportMessage = "Export cancelled." }
@@ -315,6 +324,25 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 else -> "Preparing…"
                             }, color = Muted, fontSize = 10.sp)
                         }
+                        OutlinedButton(
+                            onClick = {
+                                val source = video ?: return@OutlinedButton
+                                scope.launch {
+                                    faceTrackingBusy = true
+                                    faceTrackingMessage = "Scanning frames for faces…"
+                                    try {
+                                        faceTrackingPath = FaceTrackingAnalyzer.analyze(context, source, 0L, duration, exportAspectRatio)
+                                        faceTrackingMessage = if (faceTrackingPath.isEmpty()) "No faces detected. Center crop will be used."
+                                            else "Tracked a face across ${faceTrackingPath.size} sampled moments. Tracking path is ready."
+                                    } catch (error: Exception) {
+                                        faceTrackingMessage = "Face scan failed: ${error.localizedMessage ?: "unknown error"}"
+                                    } finally { faceTrackingBusy = false }
+                                }
+                            },
+                            enabled = !faceTrackingBusy && duration > 0L,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (faceTrackingBusy) "Detecting faces…" else "Analyze face tracking") }
+                        Text(faceTrackingMessage, color = Muted, fontSize = 11.sp)
                         VideoPreview(
                             uri = video!!,
                             onDuration = { if (it > 0L) { duration = it; previewError = null } },
@@ -669,6 +697,22 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         Text(if (selectedClips.size == clips.size) "Deselect all" else "Select all")
                     }
                 }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = burnCaptions, onCheckedChange = { burnCaptions = it }, enabled = !batchExporting)
+                    Column(Modifier.weight(1f)) {
+                        Text("Burn captions into exported MP4", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Uses your on-device Whisper transcript", color = Muted, fontSize = 10.sp)
+                    }
+                    var presetMenu by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(onClick = { presetMenu = true }, enabled = burnCaptions) { Text(CaptionPreset.valueOf(captionPreset).label) }
+                        DropdownMenu(expanded = presetMenu, onDismissRequest = { presetMenu = false }) {
+                            CaptionPreset.entries.forEach { preset ->
+                                DropdownMenuItem(text = { Text(preset.label) }, onClick = { captionPreset = preset.name; presetMenu = false })
+                            }
+                        }
+                    }
+                }
                 Text("Export format", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                     listOf("9:16 Shorts" to (9f / 16f), "16:9 YouTube" to (16f / 9f), "1:1 Square" to 1f).forEach { (label, ratio) ->
@@ -680,6 +724,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         )
                     }
                 }
+                Button(onClick = { selectedClips = clips.filter { reviewed[it] == ClipReviewDecision.APPROVED }.toSet() },
+                    enabled = !batchExporting && reviewed.values.any { it == ClipReviewDecision.APPROVED },
+                    modifier = Modifier.fillMaxWidth()) { Text("Select approved clips only") }
                 Button(onClick = { batchPicker.launch(null) }, enabled = selectedClips.isNotEmpty() && !batchExporting, modifier = Modifier.fillMaxWidth()) {
                     Text(if (batchExporting) "Exporting selected clips…" else "Export ${selectedClips.size} selected clips")
                 }
@@ -700,6 +747,16 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                             Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
                             if (clip.reason.isNotBlank()) Text(clip.reason, color = Cyan, fontSize = 10.sp, maxLines = 2)
+                            val decision = reviewed[clip] ?: ClipReviewDecision.PENDING
+                            Text("Review · ${decision.name.lowercase().replaceFirstChar { it.uppercase() }}", color = when (decision) {
+                                ClipReviewDecision.APPROVED -> Color(0xFF6EE7B7)
+                                ClipReviewDecision.REJECTED -> Color(0xFFFCA5A5)
+                                else -> Muted
+                            }, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(onClick = { reviewed = reviewed + (clip to ClipReviewDecision.APPROVED) }, modifier = Modifier.weight(1f), enabled = !batchExporting) { Text("Approve") }
+                                OutlinedButton(onClick = { reviewed = reviewed + (clip to ClipReviewDecision.REJECTED); selectedClips = selectedClips - clip }, modifier = Modifier.weight(1f), enabled = !batchExporting) { Text("Reject") }
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit") }
                                 OutlinedButton(onClick = { saveCaptions(clip) }, modifier = Modifier.weight(1f)) { Text("SRT") }
