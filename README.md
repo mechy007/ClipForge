@@ -25,6 +25,10 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 
 Highlight scores are heuristic estimates of content signals. They do not predict views, engagement or virality. Results depend on speech quality and language.
 
+## Reference projects
+
+ClipForge studies three MIT-licensed open-source projects for useful clipping techniques. Android-compatible adaptations and licensing boundaries are documented in [Reference Repository Integration](docs/REFERENCE_INTEGRATION.md).
+
 ## Build
 - Android / Kotlin / Jetpack Compose
 - JDK 17, Android NDK 27.2.12479018, CMake 3.22.1
