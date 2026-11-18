@@ -21,6 +21,29 @@ object ClipExporter {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
 
+    private fun copyToDestination(
+        context: Context,
+        source: File,
+        destination: Uri,
+        onFinished: (Boolean, String) -> Unit,
+        cleanup: File? = null
+    ) {
+        ioExecutor.execute {
+            try {
+                val stream = context.contentResolver.openOutputStream(destination, "w")
+                    ?: error("Could not open the selected save location.")
+                stream.use { target -> source.inputStream().use { it.copyTo(target) } }
+                source.delete()
+                cleanup?.delete()
+                mainHandler.post { onFinished(true, "Clip exported successfully.") }
+            } catch (error: Exception) {
+                source.delete()
+                cleanup?.delete()
+                mainHandler.post { onFinished(false, "Save failed: ${error.localizedMessage ?: "unknown error"}") }
+            }
+        }
+    }
+
     fun export(
         context: Context,
         source: Uri,
@@ -28,6 +51,8 @@ object ClipExporter {
         startMs: Long,
         endMs: Long,
         aspectRatio: Float = 9f / 16f,
+        captionCues: List<CaptionCue> = emptyList(),
+        captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         onStatus: (String) -> Unit,
         onFinished: (Boolean, String) -> Unit
     ) {
@@ -57,17 +82,19 @@ object ClipExporter {
         val transformer = Transformer.Builder(context)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    mainHandler.post { onStatus("Saving MP4 to your selected location…") }
-                    ioExecutor.execute {
-                        try {
-                            val stream = context.contentResolver.openOutputStream(destination, "w")
-                                ?: error("Could not open the selected save location.")
-                            stream.use { target -> output.inputStream().use { it.copyTo(target) } }
-                            output.delete()
-                            mainHandler.post { onFinished(true, "Clip exported successfully.") }
-                        } catch (error: Exception) {
-                            output.delete()
-                            mainHandler.post { onFinished(false, "Save failed: ${error.localizedMessage ?: "unknown error"}") }
+                    if (captionCues.isEmpty()) {
+                        copyToDestination(context, output, destination, onFinished)
+                    } else {
+                        mainHandler.post { onStatus("Burning captions into the video…") }
+                        val captioned = File(context.cacheDir, "clipforge_captioned_${System.currentTimeMillis()}.mp4")
+                        CaptionBurnIn.render(context, output, captioned, captionCues, captionPreset) { success, message ->
+                            if (!success) {
+                                output.delete()
+                                captioned.delete()
+                                mainHandler.post { onFinished(false, message) }
+                            } else {
+                                copyToDestination(context, captioned, destination, onFinished, output)
+                            }
                         }
                     }
                 }
