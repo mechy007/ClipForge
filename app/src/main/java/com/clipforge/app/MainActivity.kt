@@ -189,7 +189,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             projectDb.listHighlights(projectId) to projectDb.listTranscript(projectId)
         }
         savedProjectHighlights = restored.first
-        clips = restored.first.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score) }
+        clips = restored.first.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score, it.reason) }
         transcriptSegments = restored.second
         selectedClips = clips.toSet()
     }
@@ -690,6 +690,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 Text("${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                             }
                             Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
+                            if (clip.reason.isNotBlank()) Text(clip.reason, color = Cyan, fontSize = 10.sp, maxLines = 2)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit") }
                                 OutlinedButton(onClick = { saveCaptions(clip) }, modifier = Modifier.weight(1f)) { Text("SRT") }

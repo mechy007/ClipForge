@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,7 +33,7 @@ class HighlightDetectorTest {
     }
 
     @Test
-    fun detectorReturnsBoundedNonOverlappingClips() {
+    fun detectorReturnsBoundedNonOverlappingClipsWithReasons() {
         val transcript = (0..11).map { index ->
             val start = index * 5_000L
             TranscriptSegment(
@@ -43,14 +44,36 @@ class HighlightDetectorTest {
         }
         val clips = HighlightDetector.detect(transcript, 90_000L)
         assertTrue(clips.size <= 8)
-        assertTrue(clips.all { it.startMs >= 0L && it.endMs > it.startMs && it.score in 0..100 })
+        assertTrue(clips.all {
+            it.startMs >= 0L && it.endMs > it.startMs &&
+                it.score in 0..100 && it.reason.isNotBlank()
+        })
         clips.forEachIndexed { index, clip ->
             clips.drop(index + 1).forEach { other ->
-                val overlap = (minOf(clip.endMs, other.endMs) - maxOf(clip.startMs, other.startMs))
-                    .coerceAtLeast(0L)
-                val shorter = minOf(clip.endMs - clip.startMs, other.endMs - other.startMs)
-                assertTrue(overlap.toDouble() / shorter.coerceAtLeast(1L) <= 0.55)
+                assertTrue(
+                    HighlightDetector.intersectionOverUnion(
+                        clip.startMs, clip.endMs, other.startMs, other.endMs
+                    ) <= 0.40
+                )
             }
         }
+    }
+
+    @Test
+    fun intersectionOverUnionUsesUnionNotShorterClip() {
+        assertEquals(0.5, HighlightDetector.intersectionOverUnion(0, 30_000, 10_000, 40_000), 0.0001)
+        assertEquals(0.0, HighlightDetector.intersectionOverUnion(0, 10, 10, 20), 0.0)
+        assertEquals(0.0, HighlightDetector.intersectionOverUnion(10, 10, 0, 20), 0.0)
+    }
+
+    @Test
+    fun reasonsAreGeneratedFromWeightedSignals() {
+        val transcript = (0..5).map { index ->
+            val start = index * 5_000L
+            TranscriptSegment(start, start + 4_500L, "Why this simple solution works is surprising!")
+        }
+        val clips = HighlightDetector.detect(transcript, 30_000L)
+        assertFalse(clips.isEmpty())
+        assertTrue(clips.all { it.reason.startsWith("Ranked") })
     }
 }
