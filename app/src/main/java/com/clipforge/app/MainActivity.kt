@@ -250,17 +250,6 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Open Creator Live Studio · Camera + local recording") }
-            YouTubeLivePanel(
-                database = projectDb,
-                onMonitoringStarted = { liveMarkers = emptyList(); activeLiveSessionId = null },
-                onActiveSessionChanged = { activeLiveSessionId = it },
-                onMarker = { marker ->
-                    liveMarkers = (liveMarkers + marker).distinctBy { it.startMs }.sortedBy { it.startMs }.takeLast(100)
-                },
-                onMarkersRestored = { restored ->
-                    liveMarkers = restored.distinctBy { it.startMs }.sortedBy { it.startMs }.takeLast(100)
-                }
-            )
             if (liveMarkers.isNotEmpty()) {
                 Text("${liveMarkers.size} live highlight marker(s) collected", color = Muted, fontSize = 12.sp)
                 Button(
@@ -301,6 +290,18 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
 
             }
+            YouTubeLivePanel(
+                database = projectDb,
+                visible = activeSection == "Live",
+                onMonitoringStarted = { liveMarkers = emptyList(); activeLiveSessionId = null },
+                onActiveSessionChanged = { activeLiveSessionId = it },
+                onMarker = { marker ->
+                    liveMarkers = (liveMarkers + marker).distinctBy { it.startMs }.sortedBy { it.startMs }.takeLast(100)
+                },
+                onMarkersRestored = { restored ->
+                    liveMarkers = restored.distinctBy { it.startMs }.sortedBy { it.startMs }.takeLast(100)
+                }
+            )
             if (activeSection == "Studio") {
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
