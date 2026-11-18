@@ -168,6 +168,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     LaunchedEffect(video) {
         editorStartMs = 0L
         editorEndMs = 0L
+        previewingClip = null
     }
 
     LaunchedEffect(video) {
@@ -360,7 +361,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     destinations.forEach { (section, label, icon) ->
                         NavigationBarItem(
                             selected = activeSection == section,
-                            onClick = { activeSection = section },
+                            onClick = {
+                                activeSection = section
+                                if (section != "Highlights") previewingClip = null
+                            },
                             icon = { Icon(icon, contentDescription = label) },
                             label = { Text(label, fontSize = 10.sp, maxLines = 1) },
                             alwaysShowLabel = true,
