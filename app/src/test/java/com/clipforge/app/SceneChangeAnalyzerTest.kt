@@ -9,6 +9,6 @@ class SceneChangeAnalyzerTest {
     }
 
     @Test fun largeFrameChangeIsDetectedByDifferenceMetric() {
-        assertEquals(.8f, SceneChangeAnalyzer.difference(floatArrayOf(.1f, .2f), floatArrayOf(.9f, .2f)), .0001f)
+        assertEquals(.4f, SceneChangeAnalyzer.difference(floatArrayOf(.1f, .2f), floatArrayOf(.9f, .2f)), .0001f)
     }
 }

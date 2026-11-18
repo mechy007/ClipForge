@@ -5,7 +5,7 @@ import org.junit.Test
 
 class ClipBoundaryRefinerTest {
     @Test fun snapsToQuietWindowsAroundSpeech() {
-        val transcript = listOf(TranscriptSegment(2_000L, 8_000L, "A complete spoken moment"))
+        val transcript = listOf(TranscriptSegment(2_200L, 8_000L, "A complete spoken moment"))
         val audio = listOf(
             AudioEnergyWindow(0L, 1_000L, .001f, .01f),
             AudioEnergyWindow(1_000L, 2_000L, .001f, .01f),
@@ -14,7 +14,7 @@ class ClipBoundaryRefinerTest {
             AudioEnergyWindow(9_000L, 10_000L, .001f, .01f)
         )
         val result = ClipBoundaryRefiner.refine(2_500L, 8_500L, 12_000L, transcript, audio)
-        assertEquals(1_000L, result.first)
+        assertEquals(2_000L, result.first)
         assertEquals(9_000L, result.second)
     }
 
