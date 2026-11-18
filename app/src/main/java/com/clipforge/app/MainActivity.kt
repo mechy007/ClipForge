@@ -189,7 +189,7 @@ private fun ClipForgeHome() {
             Text("Find highlights. Create clips. Keep your work on your device.", color = Muted, fontSize = 13.sp)
 
             YouTubeLivePanel { marker ->
-                liveMarkers = (liveMarkers + marker).distinctBy { it.startMs }.sortedBy { it.startMs }
+                liveMarkers = (liveMarkers + marker).distinctBy { it.startMs }.sortedBy { it.startMs }.takeLast(100)
             }
             if (liveMarkers.isNotEmpty()) {
                 Text("${liveMarkers.size} live highlight marker(s) collected", color = Muted, fontSize = 12.sp)
