@@ -196,10 +196,16 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
 
             Button(
                 onClick = {
+                    context.startActivity(android.content.Intent(context, ScreenCaptureSetupActivity::class.java))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Screen / Game Capture · RTMPS + internal audio") }
+            Button(
+                onClick = {
                     context.startActivity(android.content.Intent(context, CreatorLiveStudioActivity::class.java))
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Open Creator Live Studio · RTMPS + local recording") }
+            ) { Text("Open Creator Live Studio · Camera + local recording") }
             YouTubeLivePanel(
                 database = projectDb,
                 onMonitoringStarted = { liveMarkers = emptyList() },
