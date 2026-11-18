@@ -209,9 +209,13 @@ private fun ClipForgeHome() {
                                     score = 70
                                 )
                             }
-                            clips = (clips + candidates).distinctBy { it.startMs to it.endMs }
-                                .sortedByDescending { it.score }
-                            message = "Live markers added. Verify the broadcast-to-recording time alignment before exporting."
+                            if (candidates.isEmpty()) {
+                                message = "No live markers fall inside this recording. Check that the recording starts with the broadcast and covers the marked times."
+                            } else {
+                                clips = (clips + candidates).distinctBy { it.startMs to it.endMs }
+                                    .sortedByDescending { it.score }
+                                message = "Live markers added. Verify the broadcast-to-recording time alignment before exporting."
+                            }
                         }
                     },
                     enabled = video != null && duration > 0L,
