@@ -33,7 +33,9 @@ object BatchExportCoordinator {
         val previous = mutableStatus.value
         if (previous.running) return
 
-        val sameBatch = previous.sourceUri == source.toString() &&
+        val retryingInterruptedBatch = previous.message.startsWith("Batch export stopped:")
+        val sameBatch = retryingInterruptedBatch &&
+            previous.sourceUri == source.toString() &&
             previous.folderUri == folder.toString() && previous.aspectRatio == aspectRatio
         val alreadyCompleted = if (sameBatch) previous.completedClips else emptyList()
         val remaining = clips.filterNot { it in alreadyCompleted }
@@ -51,7 +53,7 @@ object BatchExportCoordinator {
             running = true,
             completed = alreadyCompleted.size,
             total = clips.size,
-            message = "Resuming export · ${remaining.size} clip(s) remaining…",
+            message = if (alreadyCompleted.isNotEmpty()) "Resuming export · ${remaining.size} clip(s) remaining…" else "Exporting ${remaining.size} selected clip(s)…",
             sourceUri = source.toString(),
             folderUri = folder.toString(),
             aspectRatio = aspectRatio,

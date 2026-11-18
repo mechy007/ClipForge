@@ -1,14 +1,18 @@
 package com.clipforge.app
 
 import android.net.Uri
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -19,29 +23,37 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.AspectRatioFrameLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private val Ink = Color(0xFF0B0B10)
-private val Panel = Color(0xFF171720)
-private val Violet = Color(0xFF9B83FF)
-private val Muted = Color(0xFF9A9AA9)
+private val Ink = Color(0xFF09090B)
+private val Panel = Color(0xFF16161B)
+private val Violet = Color(0xFF6366F1)
+private val Muted = Color(0xFFA1A1AA)
+private val Cyan = Color(0xFF06B6D4)
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -61,10 +73,10 @@ class MainActivity : ComponentActivity() {
 private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    var video by remember(initialVideoUri) { mutableStateOf(initialVideoUri) }
+    var video by rememberSaveable(initialVideoUri) { mutableStateOf(initialVideoUri) }
     val projectDb = remember { ProjectDatabase(context) }
     var savedProjects by remember { mutableStateOf(projectDb.listProjects()) }
-    var activeProjectId by remember { mutableStateOf<Long?>(null) }
+    var activeProjectId by rememberSaveable { mutableStateOf<Long?>(null) }
     var savedProjectHighlights by remember { mutableStateOf<List<SavedHighlight>>(emptyList()) }
     var linkText by remember { mutableStateOf("") }
     var linkStatus by remember { mutableStateOf("") }
@@ -96,7 +108,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var selectedClips by remember { mutableStateOf<Set<ClipCandidate>>(emptySet()) }
     val batchStatus by BatchExportCoordinator.status.collectAsState()
     val batchExporting = batchStatus.running
-    var activeSection by remember { mutableStateOf("Studio") }
+    var activeSection by rememberSaveable { mutableStateOf("Studio") }
     var liveMarkers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
     var activeLiveSessionId by remember { mutableStateOf<Long?>(null) }
     var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
@@ -107,7 +119,58 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var exportMessage by remember { mutableStateOf("") }
     var exportAspectRatio by rememberSaveable { mutableFloatStateOf(9f / 16f) }
     var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
+    var previewRetryKey by remember(video) { mutableIntStateOf(0) }
+    var previewError by remember(video) { mutableStateOf<String?>(null) }
+    var videoDisplayName by remember(video) { mutableStateOf("") }
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
+
+    LaunchedEffect(video) {
+        val selected = video
+        if (selected == null) {
+            videoDisplayName = ""
+            duration = 0L
+        } else {
+            val metadata = withContext(Dispatchers.IO) {
+                val providerName = if (selected.scheme == "content") {
+                    runCatching {
+                        context.contentResolver.query(selected, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                            ?.use { cursor ->
+                                if (cursor.moveToFirst()) {
+                                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                    if (index >= 0) cursor.getString(index) else null
+                                } else null
+                            }
+                    }.getOrNull()
+                } else null
+                val displayName = providerName?.takeIf { it.isNotBlank() }
+                    ?: selected.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                    ?: "Selected video"
+                val mediaDuration = runCatching {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, selected)
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                    } finally {
+                        retriever.release()
+                    }
+                }.getOrDefault(0L)
+                displayName to mediaDuration
+            }
+            videoDisplayName = metadata.first
+            if (metadata.second > 0L) duration = metadata.second
+        }
+    }
+
+    LaunchedEffect(activeProjectId) {
+        val projectId = activeProjectId ?: return@LaunchedEffect
+        val restored = withContext(Dispatchers.IO) {
+            projectDb.listHighlights(projectId) to projectDb.listTranscript(projectId)
+        }
+        savedProjectHighlights = restored.first
+        clips = restored.first.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score) }
+        transcriptSegments = restored.second
+        selectedClips = clips.toSet()
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -169,21 +232,91 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         }
     }
     Surface(Modifier.fillMaxSize(), color = Ink) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(44.dp).background(Violet.copy(alpha = .18f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.ContentCut, null, tint = Violet)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(42.dp).background(Violet.copy(alpha = .18f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.ContentCut, null, tint = Violet)
+                    }
+                    Column(Modifier.padding(start = 10.dp)) {
+                        Text("ClipForge", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.4).sp)
+                        Text("MOBILE VIDEO STUDIO", color = Muted, fontSize = 9.sp, letterSpacing = 1.1.sp)
+                    }
                 }
-                Column(Modifier.padding(start = 11.dp)) {
-                    Text("CLIPFORGE", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-                    Text("Turn long videos into short clips", color = Muted, fontSize = 11.sp)
+                Spacer(Modifier.weight(1f))
+                Surface(color = Color(0xFF20202A), shape = RoundedCornerShape(10.dp)) {
+                    Text("ON-DEVICE AI", Modifier.padding(horizontal = 9.dp, vertical = 6.dp), color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            Text("Your next great moment.", fontSize = 27.sp, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+            Text("Make every moment count.", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 listOf("Studio", "Highlights", "Projects", "Live").forEach { section ->
-                    FilterChip(selected = activeSection == section, onClick = { activeSection = section }, label = { Text(section) })
+                    Box(
+                        Modifier.weight(1f).clip(RoundedCornerShape(11.dp))
+                            .background(if (activeSection == section) Violet.copy(alpha = .2f) else Panel)
+                            .selectable(selected = activeSection == section, role = Role.Tab) { activeSection = section }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(section, color = if (activeSection == section) Color.White else Muted,
+                            fontSize = 10.sp, fontWeight = if (activeSection == section) FontWeight.Bold else FontWeight.Medium)
+                    }
+                }
+            }
+            if (activeSection == "Studio" && video != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("PREVIEW CANVAS", color = Color(0xFFE4E4E7), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                                Text(videoDisplayName.ifBlank { "Selected video" }, color = Color.White, fontSize = 12.sp, maxLines = 1)
+                            }
+                            Text(when {
+                                previewError != null -> "Preview error"
+                                duration > 0L -> time(duration)
+                                else -> "Preparing…"
+                            }, color = Muted, fontSize = 10.sp)
+                        }
+                        VideoPreview(
+                            uri = video!!,
+                            onDuration = { if (it > 0L) { duration = it; previewError = null } },
+                            onError = { previewError = it },
+                            retryKey = previewRetryKey,
+                            aspectRatio = exportAspectRatio
+                        )
+                        if (previewError != null) {
+                            Text("Could not preview this video: ${previewError}", color = Color(0xFFFF9A9A), fontSize = 11.sp)
+                            OutlinedButton(onClick = { previewError = null; previewRetryKey++ }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Retry preview")
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("9:16" to (9f / 16f), "16:9" to (16f / 9f), "1:1" to 1f).forEach { (label, ratio) ->
+                                Box(
+                                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                                        .background(if (exportAspectRatio == ratio) Violet.copy(alpha = .22f) else Ink)
+                                        .selectable(
+                                            selected = exportAspectRatio == ratio,
+                                            enabled = !batchExporting,
+                                            role = Role.RadioButton
+                                        ) {
+                                            exportAspectRatio = ratio
+                                            exportAspectLabel = when (label) {
+                                                "9:16" -> "9:16 Shorts"
+                                                "16:9" -> "16:9 YouTube"
+                                                else -> "1:1 Square"
+                                            }
+                                        }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(label, color = if (exportAspectRatio == ratio) Color.White else Muted,
+                                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (activeSection == "Studio") {
@@ -341,7 +474,6 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
 
             if (video != null) {
-                VideoPreview(video!!, onDuration = { if (it > 0L) duration = it })
                 Button(onClick = {
                     val src = video ?: return@Button
                     scope.launch {
@@ -491,7 +623,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("PRIVATE · ON-DEVICE WORKFLOW", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
-                Text("v0.5.0", color = Muted, fontSize = 10.sp)
+                Text("v0.6.0", color = Muted, fontSize = 10.sp)
             }
         }
     }
@@ -502,17 +634,94 @@ private fun formatElapsed(seconds: Long): String = "%d:%02d".format(seconds / 60
 private fun time(ms: Long): String = "%d:%02d".format(ms / 60_000L, (ms / 1000L) % 60L)
 
 @Composable
-private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit) {
+private fun VideoPreview(
+    uri: Uri,
+    onDuration: (Long) -> Unit,
+    onError: (String) -> Unit,
+    retryKey: Int,
+    aspectRatio: Float = 9f / 16f
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val player = remember(uri) {
+    val player = remember(uri, retryKey) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_READY) onDuration(duration.coerceAtLeast(0L)) }
-            })
-            prepare()
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
-    AndroidView(factory = { PlayerView(it).apply { this.player = player } }, modifier = Modifier.fillMaxWidth().height(210.dp))
+    var isPlaying by remember(player) { mutableStateOf(false) }
+    var positionMs by remember(player) { mutableLongStateOf(0L) }
+    var durationMs by remember(player) { mutableLongStateOf(0L) }
+    var isSeeking by remember(player) { mutableStateOf(false) }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY) {
+                    durationMs = player.duration.coerceAtLeast(0L)
+                    onDuration(durationMs)
+                }
+            }
+            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+            override fun onPlayerError(error: PlaybackException) {
+                onError(error.message ?: "Media3 could not open this file")
+            }
+        }
+        player.addListener(listener)
+        player.prepare()
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+    LaunchedEffect(player) {
+        while (true) {
+            if (!isSeeking) positionMs = player.currentPosition.coerceAtLeast(0L)
+            if (player.duration > 0L) durationMs = player.duration
+            delay(300L)
+        }
+    }
+
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        val previewMaxWidth = when {
+            aspectRatio < 1f -> 150.dp
+            aspectRatio == 1f -> 260.dp
+            else -> 520.dp
+        }
+        AndroidView(
+            factory = { PlayerView(it).apply {
+                this.player = player
+                useController = false
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            } },
+            modifier = Modifier.widthIn(max = previewMaxWidth).aspectRatio(aspectRatio)
+        )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            IconButton(onClick = { player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L)) }) {
+                Icon(Icons.Default.Replay10, contentDescription = "Rewind 10 seconds", tint = Color.White)
+            }
+            IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause preview" else "Play preview",
+                    tint = Color.White
+                )
+            }
+            IconButton(onClick = {
+                val end = durationMs.takeIf { it > 0L } ?: player.duration.coerceAtLeast(0L)
+                player.seekTo((player.currentPosition + 10_000L).coerceAtMost(end))
+            }) {
+                Icon(Icons.Default.Forward10, contentDescription = "Forward 10 seconds", tint = Color.White)
+            }
+            Text("${time(positionMs)} / ${time(durationMs)}", color = Muted, fontSize = 11.sp)
+        }
+        Slider(
+            value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
+            onValueChange = { isSeeking = true; positionMs = it.toLong() },
+            onValueChangeFinished = {
+                player.seekTo(positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L)))
+                isSeeking = false
+            },
+            valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
+            enabled = durationMs > 0L
+        )
+    }
 }
