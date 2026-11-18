@@ -1,5 +1,7 @@
 package com.clipforge.app
 
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,6 +46,7 @@ fun YouTubeLivePanel(
     onMarker: (LiveChatHighlightMarker) -> Unit,
     onMarkersRestored: (List<LiveChatHighlightMarker>) -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val api = remember { YouTubeLiveApiClient() }
     var videoInput by remember { mutableStateOf("") }
@@ -61,6 +64,7 @@ fun YouTubeLivePanel(
     var sessionTitle by remember { mutableStateOf(restoredSession?.title.orEmpty()) }
     var markers by remember { mutableStateOf(restoredMarkers) }
     var monitorJob by remember { mutableStateOf<Job?>(null) }
+    var sessionForInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         if (restoredMarkers.isNotEmpty()) onMarkersRestored(restoredMarkers)
@@ -92,7 +96,7 @@ fun YouTubeLivePanel(
             Text("LIVE CHAT SIGNALS", color = ClipForgePalette.Accent, fontWeight = FontWeight.Bold)
             Text("Public chat activity markers", style = MaterialTheme.typography.titleMedium)
             Text(
-                "This tool reads public live-chat activity and creates timestamps. It does not download or record YouTube video playback. Import an authorised recording to turn approved moments into clips.",
+                "Record the livestream playing on this phone, or monitor public chat to find high-activity moments. Android screen capture records what is visible; protected playback may block capture.",
                 color = ClipForgePalette.Muted,
                 style = MaterialTheme.typography.bodySmall
             )
@@ -103,6 +107,24 @@ fun YouTubeLivePanel(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Public YouTube Live URL or video ID") },
                 singleLine = true
+            )
+            Button(
+                onClick = {
+                    val captureIntent = Intent(context, ScreenCaptureSetupActivity::class.java).apply {
+                        putExtra(ScreenCaptureService.EXTRA_LOCAL_ONLY, true)
+                        putExtra(ScreenCaptureService.EXTRA_SOURCE_URL, videoInput.trim())
+                        putExtra(MainActivity.EXTRA_LIVE_SESSION_ID,
+                            if (sessionForInput == videoInput.trim()) activeSessionId ?: -1L else -1L)
+                    }
+                    context.startActivity(captureIntent)
+                },
+                enabled = YouTubeLinkClassifier.isYouTubeUrl(videoInput),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Record this livestream on this phone") }
+            Text(
+                "ClipForge will ask for Android screen-sharing permission, start a local MP4 recording, then open this livestream. Use the notification to stop and save the recording. Only record content you are authorised to capture.",
+                color = ClipForgePalette.Muted,
+                style = MaterialTheme.typography.bodySmall
             )
             OutlinedTextField(
                 value = apiKey,
@@ -137,6 +159,7 @@ fun YouTubeLivePanel(
                                 sessionTitle = session.title
                                 val monitorStartedAtMs = System.currentTimeMillis()
                                 activeSessionId = database.saveLiveSession(session, monitorStartedAtMs)
+                                sessionForInput = videoInput.trim()
                                 onActiveSessionChanged(activeSessionId)
                                 val startOffsetMs = (monitorStartedAtMs - session.actualStartTimeMs).coerceAtLeast(0L)
                                 val detector = LiveChatSpikeDetector(monitorStartOffsetMs = startOffsetMs)

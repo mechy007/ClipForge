@@ -3,6 +3,7 @@ package com.clipforge.app
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -57,6 +58,7 @@ private fun ScreenCaptureSetupScreen() {
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val liveSessionId = activity.intent.getLongExtra(MainActivity.EXTRA_LIVE_SESSION_ID, -1L)
     val localOnly = remember { activity.intent.getBooleanExtra(ScreenCaptureService.EXTRA_LOCAL_ONLY, false) }
+    val sourceUrl = remember { activity.intent.getStringExtra(ScreenCaptureService.EXTRA_SOURCE_URL).orEmpty() }
     var serverUrl by remember { mutableStateOf("rtmps://a.rtmps.youtube.com:443/live2") }
     var streamKey by remember { mutableStateOf("") }
     var pendingEndpoint by remember { mutableStateOf("") }
@@ -81,6 +83,13 @@ private fun ScreenCaptureSetupScreen() {
             }
             try {
                 ContextCompat.startForegroundService(context, serviceIntent)
+                if (sourceUrl.isNotBlank() && YouTubeLinkClassifier.isYouTubeUrl(sourceUrl)) {
+                    runCatching {
+                        activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sourceUrl)))
+                    }.onFailure {
+                        status = "Recording started. Open YouTube manually and play the livestream."
+                    }
+                }
                 activity.finish()
             } catch (_: Exception) {
                 status = "ClipForge could not start screen capture. Check notification permission and try again."
@@ -152,7 +161,8 @@ private fun ScreenCaptureSetupScreen() {
             if (liveSessionId > 0L) Text("Linked to your latest YouTube Live chat session · markers will align to this recording.", color = Color(0xFF75D6A2), style = MaterialTheme.typography.bodySmall)
             Text(
                 if (localOnly) {
-                    "ClipForge records the screen and supported internal playback audio to a local MP4. Start this capture, switch to the livestream app or browser, and play the stream. Microphone commentary is not recorded."
+                    if (sourceUrl.isNotBlank()) "After you grant screen access, ClipForge starts recording and opens the livestream. Keep playback in the foreground. Supported internal audio is included; microphone commentary is not recorded."
+                    else "ClipForge records the screen and supported internal playback audio to a local MP4. Start this capture, switch to the livestream app or browser, and play the stream. Microphone commentary is not recorded."
                 } else {
                     "ClipForge captures the Android screen and supported internal game/media audio, sends it over RTMPS, and records a local MP4 at the same time. It does not record microphone commentary in this mode."
                 },
