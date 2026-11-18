@@ -85,15 +85,35 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var transcriptLanguage by rememberSaveable { mutableStateOf("auto") }
     var languageMenuExpanded by remember { mutableStateOf(false) }
-    var downloading by remember { mutableStateOf(false) }
+    var preparingModel by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
-    var modelMessage by remember { mutableStateOf("One-time download · works offline afterwards") }
+    var modelMessage by remember { mutableStateOf("Preparing the bundled offline AI model…") }
     var analyzing by remember { mutableStateOf(false) }
     var analysisElapsedSeconds by remember { mutableLongStateOf(0L) }
     var transcriptionElapsedSeconds by remember { mutableLongStateOf(0L) }
     var currentPart by remember { mutableIntStateOf(0) }
     var analysisStartedAt by remember { mutableLongStateOf(0L) }
     var transcriptionStartedAt by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(Unit) {
+        if (!ready) {
+            preparingModel = true
+            modelMessage = "Installing bundled AI model · no internet required…"
+            try {
+                WhisperModelManager.ensureModel(context) { done, total ->
+                    withContext(Dispatchers.Main) {
+                        progress = (done.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+                    }
+                }
+                ready = true
+                modelMessage = "Verified and ready. AI works offline."
+            } catch (error: Exception) {
+                modelMessage = error.localizedMessage ?: "Bundled AI model setup failed. Retry below."
+            } finally {
+                preparingModel = false
+            }
+        }
+    }
 
     LaunchedEffect(analyzing) {
         while (analyzing) {
@@ -469,7 +489,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         Text(if (ready) "READY" else "SETUP", color = if (ready) Color(0xFF75D6A2) else Muted, fontSize = 10.sp)
                     }
                     Text(WhisperModelManager.MODEL_NAME, fontWeight = FontWeight.SemiBold)
-                    Text("Approx. 78 MB · downloaded once · stays on this device", color = Muted, fontSize = 11.sp)
+                    Text("Included in the APK · approx. 78 MB · no model download or sign-in", color = Muted, fontSize = 11.sp)
                     Box {
                         OutlinedButton(onClick = { languageMenuExpanded = true }, enabled = !analyzing) {
                             Text("Transcript language · " + when (transcriptLanguage) {
@@ -511,20 +531,20 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                         }
                     }
-                    if (downloading) LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                    if (preparingModel) LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
                     Button(onClick = {
                         scope.launch {
-                            downloading = true
+                            preparingModel = true
                             try {
                                 WhisperModelManager.ensureModel(context) { done, total ->
                                     withContext(Dispatchers.Main) { progress = (done.toFloat() / total.toFloat()).coerceIn(0f, 1f) }
                                 }
                                 ready = true; modelMessage = "Verified. Ready for offline analysis."
-                            } catch (e: Exception) { modelMessage = e.localizedMessage ?: "Model download failed." }
-                            finally { downloading = false }
+                            } catch (e: Exception) { modelMessage = e.localizedMessage ?: "Bundled model setup failed." }
+                            finally { preparingModel = false }
                         }
-                    }, enabled = !ready && !downloading, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (downloading) "Downloading…" else if (ready) "AI model ready" else "Download offline AI model")
+                    }, enabled = !ready && !preparingModel, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (preparingModel) "Preparing bundled model…" else if (ready) "AI model ready" else "Prepare bundled AI model")
                     }
                     Text(modelMessage, color = Muted, fontSize = 11.sp)
                 }
@@ -711,7 +731,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("PRIVATE · ON-DEVICE WORKFLOW", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
-                Text("v0.6.1", color = Muted, fontSize = 10.sp)
+                Text("v0.6.2", color = Muted, fontSize = 10.sp)
             }
         }
     }
