@@ -74,20 +74,27 @@ object HighlightDetector {
     fun detect(
         segments: List<TranscriptSegment>,
         durationMs: Long,
-        targetDurationMs: Long = DEFAULT_WINDOW_MS
-    ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs)
+        targetDurationMs: Long = DEFAULT_WINDOW_MS,
+        audioEnergy: List<AudioEnergyWindow> = emptyList()
+    ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs, audioEnergy)
 
     fun detectWithWeights(
         segments: List<TranscriptSegment>,
         durationMs: Long,
         weights: RankingWeights,
-        targetDurationMs: Long = DEFAULT_WINDOW_MS
+        targetDurationMs: Long = DEFAULT_WINDOW_MS,
+        audioEnergy: List<AudioEnergyWindow> = emptyList()
     ): List<ClipCandidate> {
         if (segments.isEmpty() || durationMs <= 0L) return emptyList()
         val sorted = segments.filter {
             it.startMs >= 0L && it.endMs > it.startMs && it.text.isNotBlank()
         }.sortedBy { it.startMs }
         if (sorted.isEmpty()) return emptyList()
+
+        val audioReferenceRms = audioEnergy.map { it.rms }.filter { it.isFinite() }.sorted()
+            .let { values -> values.getOrNull(((values.size - 1) * 0.90).toInt()) ?: 0f }
+        val audioReferencePeak = audioEnergy.map { it.peak }.filter { it.isFinite() }.sorted()
+            .let { values -> values.getOrNull(((values.size - 1) * 0.95).toInt()) ?: 0f }
 
         val windowMs = targetDurationMs.coerceIn(MIN_WINDOW_MS, MAX_WINDOW_MS)
         val stepMs = (windowMs / 3L).coerceAtLeast(5_000L)
@@ -105,11 +112,20 @@ object HighlightDetector {
                     val insight = PassiveClipInsights.analyse(rows, text, start, end, durationMs)
                     val clipStart = insight.startMs.coerceIn(start, end - 1L)
                     val clipEnd = insight.endMs.coerceIn(clipStart + 1L, end)
+                    val transcriptScore = weights.score(f)
+                    val audioScore = AudioSignalScorer.score(
+                        clipStart, clipEnd, audioEnergy, audioReferenceRms, audioReferencePeak
+                    )
+                    val combinedScore = if (audioEnergy.isEmpty()) transcriptScore
+                        else (transcriptScore * 0.82f + audioScore * 0.18f).toInt().coerceIn(0, 100)
+                    val audioReason = if (audioEnergy.isEmpty()) ""
+                        else " Audio activity signal: $audioScore/100."
                     candidates += ClipCandidate(
                         startMs = clipStart, endMs = clipEnd,
                         title = insight.suggestedTitle,
-                        hook = text.take(180), score = weights.score(f),
-                        reason = weights.explain(f) + " Category: " + insight.category + ". " + insight.note
+                        hook = text.take(180), score = combinedScore,
+                        reason = weights.explain(f) + audioReason +
+                            " Category: " + insight.category + ". " + insight.note
                     )
                 }
             }

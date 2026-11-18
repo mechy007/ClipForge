@@ -671,7 +671,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         currentPart = 0
                         message = "Preparing audio locally…"
                         try {
-                            val transcript = VideoTranscriber.transcribe(context, src, language = transcriptLanguage.takeUnless { it == "auto" }, onStatus = { status ->
+                            val analysis = VideoTranscriber.transcribeWithSignals(context, src, language = transcriptLanguage.takeUnless { it == "auto" }, onStatus = { status ->
                                 message = status
                                 val partMatch = Regex("part (\\d+)").find(status)
                                 if (partMatch != null) {
@@ -679,9 +679,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     currentPart = partMatch.groupValues[1].toIntOrNull() ?: currentPart
                                 }
                             })
+                            val transcript = analysis.segments
                             transcriptSegments = transcript
-                            message = "Finding strong moments…"
-                            val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration, targetClipDurationMs) }
+                            message = "Ranking speech and audio activity…"
+                            val found = withContext(Dispatchers.Default) {
+                                HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy)
+                            }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
                                 val id = existingProjectId ?: projectDb.saveProject(
