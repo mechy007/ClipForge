@@ -56,6 +56,7 @@ private fun ClipForgeHome() {
     var video by remember { mutableStateOf<Uri?>(null) }
     val projectDb = remember { ProjectDatabase(context) }
     var savedProjects by remember { mutableStateOf(projectDb.listProjects()) }
+    var activeProjectId by remember { mutableStateOf<Long?>(null) }
     var savedProjectHighlights by remember { mutableStateOf<List<SavedHighlight>>(emptyList()) }
     var linkText by remember { mutableStateOf("") }
     var linkStatus by remember { mutableStateOf("") }
@@ -96,7 +97,7 @@ private fun ClipForgeHome() {
         if (uri != null) {
             try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }
         }
-        video = uri; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); editing = null
+        video = uri; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null; editing = null
         message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
@@ -157,7 +158,7 @@ private fun ClipForgeHome() {
                         val imported = DirectVideoImporter.download(context, linkText) { p ->
                             if (p.downloadedBytes % (1024L * 1024L) < 64L * 1024L) scope.launch { linkStatus = if (p.totalBytes != null) "Downloaded ${p.downloadedBytes / 1_048_576} / ${p.totalBytes / 1_048_576} MB" else "Downloaded ${p.downloadedBytes / 1_048_576} MB" }
                         }
-                        video = imported; duration = 0L; clips = emptyList(); linkStatus = "Video imported. Preview it and run AI analysis."
+                        video = imported; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null; linkStatus = "Video imported. Preview it and run AI analysis."
                     } catch (e: Exception) { linkStatus = e.localizedMessage ?: "Video import failed." }
                     finally { importingLink = false }
                 }
@@ -174,8 +175,10 @@ private fun ClipForgeHome() {
                             }
                             TextButton(onClick = {
                                 video = Uri.parse(project.sourceUri); duration = project.durationMs
+                                activeProjectId = project.id
                                 savedProjectHighlights = projectDb.listHighlights(project.id)
                                 clips = savedProjectHighlights.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score) }
+                                transcriptSegments = projectDb.listTranscript(project.id)
                                 message = "Restored saved project."
                             }) { Text("Open") }
                         }
@@ -247,6 +250,20 @@ private fun ClipForgeHome() {
                             transcriptSegments = transcript
                             message = "Finding strong moments…"
                             val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration) }
+                            val existingProjectId = activeProjectId
+                            val persisted = withContext(Dispatchers.IO) {
+                                val id = existingProjectId ?: projectDb.saveProject(
+                                    title = src.lastPathSegment?.substringAfterLast('/')?.take(100)?.ifBlank { "ClipForge project" } ?: "ClipForge project",
+                                    sourceUri = src.toString(),
+                                    durationMs = duration,
+                                    status = "completed"
+                                )
+                                projectDb.saveHighlights(id, found)
+                                projectDb.saveTranscript(id, transcript)
+                                id to projectDb.listProjects()
+                            }
+                            activeProjectId = persisted.first
+                            savedProjects = persisted.second
                             clips = found
                             message = if (found.isEmpty()) "No clear speech highlights found. Try a video with spoken audio."
                                 else "Analysis complete · \${found.size} clips ranked"
