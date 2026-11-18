@@ -13,7 +13,10 @@ data class BatchExportStatus(
     val running: Boolean = false,
     val completed: Int = 0,
     val total: Int = 0,
-    val message: String = ""
+    val message: String = "",
+    val sourceUri: String? = null,
+    val folderUri: String? = null,
+    val completedClips: List<ClipCandidate> = emptyList()
 )
 
 /**
@@ -26,35 +29,61 @@ object BatchExportCoordinator {
     val status = mutableStatus.asStateFlow()
 
     fun start(context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>) {
-        if (mutableStatus.value.running) return
+        val previous = mutableStatus.value
+        if (previous.running) return
+
+        val sameBatch = previous.sourceUri == source.toString() &&
+            previous.folderUri == folder.toString()
+        val alreadyCompleted = if (sameBatch) previous.completedClips else emptyList()
+        val remaining = clips.filterNot { it in alreadyCompleted }
+        if (remaining.isEmpty()) {
+            mutableStatus.value = previous.copy(
+                running = false,
+                total = clips.size,
+                message = if (alreadyCompleted.isEmpty()) "No highlights were selected."
+                    else "All selected clips have already been exported and verified."
+            )
+            return
+        }
+
         mutableStatus.value = BatchExportStatus(
             running = true,
+            completed = alreadyCompleted.size,
             total = clips.size,
-            message = "Preparing batch export…"
+            message = "Resuming export · ${remaining.size} clip(s) remaining…",
+            sourceUri = source.toString(),
+            folderUri = folder.toString(),
+            completedClips = alreadyCompleted
         )
         val appContext = context.applicationContext
         scope.launch {
             try {
-                val count = BatchClipExporter.exportAll(appContext, folder, source, clips) { done, total, title ->
+                BatchClipExporter.exportAll(appContext, folder, source, remaining) { done, _, clip ->
+                    val verifiedClips = alreadyCompleted + remaining.take(done)
                     mutableStatus.value = BatchExportStatus(
                         running = true,
-                        completed = done,
-                        total = total,
-                        message = "Exporting $done / $total · $title"
+                        completed = verifiedClips.size,
+                        total = clips.size,
+                        message = "Exporting ${verifiedClips.size} / ${clips.size} · ${clip.title}",
+                        sourceUri = source.toString(),
+                        folderUri = folder.toString(),
+                        completedClips = verifiedClips
                     )
                 }
+                val completedClips = alreadyCompleted + remaining
                 mutableStatus.value = BatchExportStatus(
                     running = false,
-                    completed = count,
+                    completed = completedClips.size,
                     total = clips.size,
-                    message = "Batch export complete · $count clips saved and verified. Source video kept for safety."
+                    message = "Batch export complete · ${completedClips.size} clips saved and verified. Source video kept for safety.",
+                    sourceUri = source.toString(),
+                    folderUri = folder.toString(),
+                    completedClips = completedClips
                 )
             } catch (error: Exception) {
-                mutableStatus.value = BatchExportStatus(
+                mutableStatus.value = mutableStatus.value.copy(
                     running = false,
-                    completed = mutableStatus.value.completed,
-                    total = clips.size,
-                    message = "Batch export stopped: ${error.localizedMessage ?: "unknown error"}. Completed clips remain saved; retry the remaining clips."
+                    message = "Batch export stopped: ${error.localizedMessage ?: "unknown error"}. ${mutableStatus.value.completed} clip(s) are verified; retry to continue with the remaining clips."
                 )
             }
         }
