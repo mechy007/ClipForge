@@ -33,6 +33,7 @@ class ScreenCaptureService : Service(), ConnectChecker {
         const val EXTRA_RESULT_DATA = "com.clipforge.app.extra.SCREEN_RESULT_DATA"
         const val EXTRA_RTMP_ENDPOINT = "com.clipforge.app.extra.RTMP_ENDPOINT"
         const val EXTRA_LIVE_SESSION_ID = "com.clipforge.app.extra.LIVE_SESSION_ID"
+        const val EXTRA_LOCAL_ONLY = "com.clipforge.app.extra.LOCAL_ONLY"
         private const val CHANNEL_ID = "clipforge_screen_capture"
         private const val NOTIFICATION_ID = 3107
     }
@@ -75,7 +76,10 @@ class ScreenCaptureService : Service(), ConnectChecker {
                 ?: error("Screen-capture permission data is missing.")
             require(resultCode == Activity.RESULT_OK) { "Screen-capture permission was not granted." }
             val endpoint = intent?.getStringExtra(EXTRA_RTMP_ENDPOINT).orEmpty()
-            require(endpoint.startsWith("rtmps://", ignoreCase = true)) { "A secure RTMPS endpoint is required." }
+            val localOnly = intent?.getBooleanExtra(EXTRA_LOCAL_ONLY, false) == true
+            require(localOnly || endpoint.startsWith("rtmps://", ignoreCase = true)) {
+                "A secure RTMPS endpoint is required for streaming mode."
+            }
 
             val manager = getSystemService(MediaProjectionManager::class.java)
             projection = manager.getMediaProjection(resultCode, resultData)
@@ -117,12 +121,18 @@ class ScreenCaptureService : Service(), ConnectChecker {
             val recordingStartMs = System.currentTimeMillis()
             liveStream.startRecord(file.absolutePath) { status ->
                 if (status == RecordController.Status.RECORDING) {
-                    updateActiveNotification("Screen recording active · connecting to RTMPS.")
+                    updateActiveNotification(
+                        if (localOnly) "Local screen recording active · stop from this notification."
+                        else "Screen recording active · connecting to RTMPS."
+                    )
                 }
             }
             if (liveSessionId > 0L) runCatching { ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, recordingStartMs, file.absolutePath) }
-            liveStream.startStream(endpoint)
-            updateActiveNotification("Screen capture started · streaming and recording locally.")
+            if (!localOnly) liveStream.startStream(endpoint)
+            updateActiveNotification(
+                if (localOnly) "Recording this device screen locally."
+                else "Screen capture started · streaming and recording locally."
+            )
         } catch (_: Exception) {
             finishCapture()
         }

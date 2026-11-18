@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import android.net.Uri
+import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.Bundle
@@ -621,6 +622,25 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 ) { Text("Create clips from live markers") }
             }
 
+            }
+            if (activeSection == "Live") {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text("RECORD A LIVESTREAM ON THIS PHONE", color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Capture a livestream that is playing in another app or browser, then use ClipForge to find its best moments.", color = Color(0xFFE0E4D9), fontSize = 12.sp, lineHeight = 17.sp)
+                        Text("Android will ask for screen-sharing permission. Record only content you are authorised to capture. Protected content may block recording.", color = Muted, fontSize = 11.sp)
+                        Button(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(context, ScreenCaptureSetupActivity::class.java)
+                                        .putExtra(ScreenCaptureService.EXTRA_LOCAL_ONLY, true)
+                                        .putExtra(MainActivity.EXTRA_LIVE_SESSION_ID, activeLiveSessionId ?: -1L)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Start local livestream recording") }
+                    }
+                }
             }
             YouTubeLivePanel(
                 database = projectDb,
