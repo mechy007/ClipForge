@@ -3,7 +3,7 @@
 ClipForge is an Android-first, local-first video clipping app. It imports local videos, previews and trims them, transcribes speech offline with whisper.cpp, ranks transcript-based highlight candidates, and exports selected moments as MP4 clips.
 
 ## Current capabilities
-- Import and preview a local video using Android's document picker.
+- Import and preview a local video using Android's document picker, with a responsive preview canvas, playback controls, seeking, and provider-supplied display names.
 - Import supported direct HTTPS video-file links (MP4, WebM, MOV, MKV) with MIME validation, a 2 GB limit and partial-download cleanup.
 - Save analyzed projects and ranked highlights in a local SQLite library; reopen saved project metadata and highlights.
 - Download the multilingual Whisper tiny model once; verify its size and SHA-256 before accepting it.
@@ -12,7 +12,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Detect candidate 30-second highlights using offline transcript signals (speech density, hook words, punctuation and vocabulary variety).
 - Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
 - Select individual detected highlights or all highlights, then export them individually or sequentially as a batch into a chosen Android folder. Each batch output is verified before it is marked complete; interrupted batches can resume remaining clips without re-exporting verified clips while the app process remains alive.
-- Export selected clips as vertical 9:16 Shorts, landscape 16:9 YouTube videos, or square 1:1 MP4s using Media3 Transformer. The chosen format applies to both single and batch exports.
+- Export selected clips as vertical 9:16 Shorts, landscape 16:9 YouTube videos, or square 1:1 MP4s using Media3 Transformer. The chosen format applies to both single and batch exports, and the Studio preview uses the same crop-to-fill behavior.
 - Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
 - Monitor public YouTube Live chat through the official Data API, detect activity spikes, and persist live sessions and timestamp markers in SQLite so they survive screen and app restarts.
 - When capture is started from an existing monitored session, save the local recording start time and automatically convert broadcast-relative chat markers to the recording timeline. For automatic alignment, start YouTube Live chat monitoring first, then start the camera or screen capture.
@@ -34,7 +34,7 @@ The Whisper model is downloaded from its published model repository and stored i
 ## Current limitations
 - The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed. Batch export progress survives Activity recreation but is not yet recoverable after Android terminates the app process.
 - Direct-link import supports direct HTTPS media files only, not YouTube or social-platform pages. The YouTube Live integration reads metadata/chat only; it does not download or record YouTube playback. Creator Live Studio captures a new camera/microphone feed that the user owns. The camera studio requires a manually supplied RTMPS server URL and stream key and runs while its activity stays open. Screen/game capture requires Android 10+, user-approved MediaProjection, Android audio permission for playback capture, notification permission, and a manually supplied RTMPS server URL/key. It captures supported internal game/media audio, not microphone commentary. Internal audio depends on the source app allowing playback capture; protected apps may block it. Set screen orientation before starting. Neither studio creates broadcasts through YouTube OAuth.
-- Durable background processing, animated/burned-in caption rendering, aspect-ratio rendering and face-aware reframing are not yet complete. SRT sidecar export is available separately.
+- Durable background processing, animated/burned-in caption rendering, and face-aware reframing are not yet complete. SRT sidecar export is available separately.
 
 ## Next milestones
 - Animated caption styles and subtitle export.
