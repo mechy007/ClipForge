@@ -118,6 +118,32 @@ class YouTubeLiveApiClient(
         )
     }
 
+    private fun getJson(url: URL): JSONObject {
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
+            setRequestProperty("Accept", "application/json")
+        }
+        try {
+            val code = connection.responseCode
+            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val reason = runCatching {
+                    JSONObject(body).optJSONObject("error")?.optString("message")
+                }.getOrNull().orEmpty()
+                throw IllegalStateException(
+                    if (reason.isNotBlank()) "YouTube API error ($code): $reason"
+                    else "YouTube API request failed ($code)."
+                )
+            }
+            return JSONObject(body)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     companion object {
         fun parseVideoId(input: String): String {
             val raw = input.trim()
@@ -148,30 +174,5 @@ class YouTubeLiveApiClient(
         private fun encode(value: String): String =
             URLEncoder.encode(value, Charsets.UTF_8.name())
 
-        private fun getJson(url: URL): JSONObject {
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 15_000
-                readTimeout = 20_000
-                setRequestProperty("Accept", "application/json")
-            }
-            try {
-                val code = connection.responseCode
-                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
-                    ?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) {
-                    val reason = runCatching {
-                        JSONObject(body).optJSONObject("error")?.optString("message")
-                    }.getOrNull().orEmpty()
-                    throw IllegalStateException(
-                        if (reason.isNotBlank()) "YouTube API error ($code): $reason"
-                        else "YouTube API request failed ($code)."
-                    )
-                }
-                return JSONObject(body)
-            } finally {
-                connection.disconnect()
-            }
-        }
     }
 }
