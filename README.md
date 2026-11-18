@@ -6,7 +6,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Import and preview a local video using Android's document picker, with a responsive preview canvas, playback controls, seeking, and provider-supplied display names.
 - Import supported direct HTTPS video-file links (MP4, WebM, MOV, MKV) with MIME validation, a 2 GB limit and partial-download cleanup.
 - Save analyzed projects and ranked highlights in a local SQLite library; reopen saved project metadata and highlights.
-- Download the multilingual Whisper tiny model once; verify its size and SHA-256 before accepting it.
+- Bundle the multilingual Whisper tiny model inside the APK; install it into app-private storage on first launch and verify its size and SHA-256. No in-app model download is required.
 - Decode a video's audio track locally to mono 16 kHz float PCM.
 - Transcribe audio in bounded 30-second chunks and retain timestamped transcript segments.
 - Choose automatic language detection or explicitly select English, Malayalam, Hindi, Tamil, Telugu, Kannada, Bengali, Urdu or Arabic for on-device transcription.
@@ -31,7 +31,7 @@ Highlight scores are heuristic estimates of content signals. They do not predict
 - Minimum Android SDK 26
 
 ## Privacy and storage
-The Whisper model is downloaded from its published model repository and stored in app-private storage. Temporary decoded PCM is written to the app cache and deleted after transcription. The app does not upload the selected video or its audio.
+The Whisper model is fetched and SHA-256-verified during the APK build, packaged as an uncompressed app asset, then copied locally into app-private storage on first launch. The app performs no model network download at runtime. Temporary decoded PCM is written to the app cache and deleted after transcription. The app does not upload the selected video or its audio.
 
 ## Current limitations
 - The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed. Batch export progress survives Activity recreation but is not yet recoverable after Android terminates the app process.
