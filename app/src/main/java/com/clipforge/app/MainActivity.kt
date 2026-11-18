@@ -617,7 +617,6 @@ private fun VideoPreview(
     val player = remember(uri, retryKey) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
-            prepare()
         }
     }
     var isPlaying by remember(player) { mutableStateOf(false) }
@@ -639,6 +638,7 @@ private fun VideoPreview(
             }
         }
         player.addListener(listener)
+        player.prepare()
         onDispose {
             player.removeListener(listener)
             player.release()
