@@ -85,7 +85,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var transcriptLanguage by rememberSaveable { mutableStateOf("auto") }
     var languageMenuExpanded by remember { mutableStateOf(false) }
-    var downloading by remember { mutableStateOf(false) }
+    var preparingModel by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
     var modelMessage by remember { mutableStateOf("Preparing the bundled offline AI model…") }
     var analyzing by remember { mutableStateOf(false) }
@@ -97,7 +97,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
 
     LaunchedEffect(Unit) {
         if (!ready) {
-            downloading = true
+            preparingModel = true
             modelMessage = "Installing bundled AI model · no internet required…"
             try {
                 WhisperModelManager.ensureModel(context) { done, total ->
@@ -110,7 +110,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             } catch (error: Exception) {
                 modelMessage = error.localizedMessage ?: "Bundled AI model setup failed. Retry below."
             } finally {
-                downloading = false
+                preparingModel = false
             }
         }
     }
@@ -531,20 +531,20 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                         }
                     }
-                    if (downloading) LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                    if (preparingModel) LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
                     Button(onClick = {
                         scope.launch {
-                            downloading = true
+                            preparingModel = true
                             try {
                                 WhisperModelManager.ensureModel(context) { done, total ->
                                     withContext(Dispatchers.Main) { progress = (done.toFloat() / total.toFloat()).coerceIn(0f, 1f) }
                                 }
                                 ready = true; modelMessage = "Verified. Ready for offline analysis."
                             } catch (e: Exception) { modelMessage = e.localizedMessage ?: "Bundled model setup failed." }
-                            finally { downloading = false }
+                            finally { preparingModel = false }
                         }
-                    }, enabled = !ready && !downloading, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (downloading) "Preparing bundled model…" else if (ready) "AI model ready" else "Prepare bundled AI model")
+                    }, enabled = !ready && !preparingModel, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (preparingModel) "Preparing bundled model…" else if (ready) "AI model ready" else "Prepare bundled AI model")
                     }
                     Text(modelMessage, color = Muted, fontSize = 11.sp)
                 }
