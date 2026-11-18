@@ -38,9 +38,9 @@ For the first release, the video source must be the creator's own original recor
 
 ## Not yet implemented
 
-- Compose setup/session UI and secure API-key configuration.
-- Durable background session lifecycle and cancellation.
+- Encrypted API-key persistence is intentionally not included; the current panel keeps the restricted key in memory only.
+- Durable background session lifecycle and cancellation; monitoring currently stops when the panel leaves composition.
 - SQLite persistence for live sessions and markers.
 - Mapping broadcast timestamps to an imported source recording with explicit offset calibration.
-- Automated clipping from the authorised source recording and end-to-end device testing.
+- End-to-end device testing, including a real YouTube API key and live broadcast.
 - Creator broadcast/encoder integration.
