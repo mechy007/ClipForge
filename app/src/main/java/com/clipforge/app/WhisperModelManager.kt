@@ -52,15 +52,20 @@ object WhisperModelManager {
         try {
             context.assets.open(MODEL_ASSET).use { input ->
                 temporary.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    val buffer = ByteArray(64 * 1024)
                     var copied = 0L
+                    var lastReportedMegabyte = -1L
                     while (true) {
                         currentCoroutineContext().ensureActive()
                         val count = input.read(buffer)
                         if (count < 0) break
                         output.write(buffer, 0, count)
                         copied += count
-                        onProgress(copied, MODEL_SIZE_BYTES)
+                        val copiedMegabytes = copied / (1024L * 1024L)
+                        if (copiedMegabytes != lastReportedMegabyte || copied == MODEL_SIZE_BYTES) {
+                            onProgress(copied, MODEL_SIZE_BYTES)
+                            lastReportedMegabyte = copiedMegabytes
+                        }
                     }
                     check(copied == MODEL_SIZE_BYTES) {
                         "The bundled AI model is incomplete ($copied bytes). Reinstall the app."
@@ -70,6 +75,9 @@ object WhisperModelManager {
 
             check(sha256(temporary) == EXPECTED_SHA256) {
                 "The bundled AI model failed its integrity check. Reinstall the app."
+            }
+            if (destination.exists()) {
+                check(destination.delete()) { "Could not replace the previous offline AI model." }
             }
             check(temporary.renameTo(destination)) {
                 "Could not install the bundled AI model in app storage."
