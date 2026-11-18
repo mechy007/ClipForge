@@ -830,7 +830,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("AI Highlights", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text("${clips.size} moments ranked · choose what to export", color = Muted, fontSize = 11.sp)
+                        Text("${clips.size} moments ranked · ${selectedClips.size} selected", color = Muted, fontSize = 11.sp)
+                        Text("Signal scores compare content cues; they do not predict views or virality.", color = Muted, fontSize = 10.sp)
                     }
                     TextButton(
                         onClick = { selectedClips = if (selectedClips.containsAll(reviewableClips)) emptySet() else reviewableClips.toSet() },
@@ -896,7 +897,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     Text(clip.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
                                     Text("${time(clip.startMs)} – ${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
                                 }
-                                Text("${clip.score}", color = Accent, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("${clip.score}", color = Accent, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                    Text("SIGNAL", color = Muted, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+                                }
                             }
                             Text(clip.hook, color = Color(0xFFE0E4D9), fontSize = 11.sp, maxLines = 3)
                             if (clip.reason.isNotBlank()) Text(clip.reason, color = AccentSoft, fontSize = 10.sp, maxLines = 2)
