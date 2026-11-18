@@ -477,6 +477,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 "ml" -> "Malayalam"
                                 "hi" -> "Hindi"
                                 "ta" -> "Tamil"
+                                "te" -> "Telugu"
+                                "kn" -> "Kannada"
+                                "bn" -> "Bengali"
+                                "ur" -> "Urdu"
+                                "ar" -> "Arabic"
                                 else -> "Auto-detect"
                             })
                         }
@@ -489,7 +494,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 "en" to "English",
                                 "ml" to "Malayalam",
                                 "hi" to "Hindi",
-                                "ta" to "Tamil"
+                                "ta" to "Tamil",
+                                "te" to "Telugu",
+                                "kn" to "Kannada",
+                                "bn" to "Bengali",
+                                "ur" to "Urdu",
+                                "ar" to "Arabic"
                             ).forEach { (code, label) ->
                                 DropdownMenuItem(
                                     text = { Text(label) },
