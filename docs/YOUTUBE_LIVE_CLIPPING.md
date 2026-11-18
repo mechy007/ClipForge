@@ -36,6 +36,20 @@ For the first release, the video source must be the creator's own original recor
 - 30-second cooldown to reduce duplicate markers.
 - Chat activity is an engagement proxy, not proof that a moment is good. Future scoring can combine chat spikes with audio/transcript signals from the creator's original recording.
 
+## Next creator-owned broadcast milestone
+
+The recording path should capture the creator's original camera/microphone feed before it reaches YouTube, then send the same encoded feed to YouTube and a local MP4 file.
+
+- Authorize the creator with OAuth 2.0 for YouTube Live Streaming API operations.
+- Create a `liveStream` and `liveBroadcast`, bind them, then use the documented broadcast transitions to start the event.
+- Use YouTube's returned RTMPS ingestion address and stream name; never derive a playback URL.
+- Evaluate **RootEncoder** as the Android encoder candidate. Its upstream documentation advertises RTMPS and MP4 recording while streaming, and its current upstream build metadata declares Apache-2.0. Pin and audit the exact release and transitive dependencies before adding it.
+- Keep the local recording and outgoing stream on the same encoder timeline so chat markers can map directly to the original MP4.
+- Add camera/microphone runtime permission handling, foreground-service lifecycle, secure handling of the stream key, reconnect behavior, storage limits and low-memory quality fallbacks.
+- Benchmark 720p30 and lower fallback profiles on real target devices before selecting defaults.
+
+This is a future milestone, not part of the current chat-marker implementation.
+
 ## Not yet implemented
 
 - Encrypted API-key persistence is intentionally not included; the current panel keeps the restricted key in memory only.
