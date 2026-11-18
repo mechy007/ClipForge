@@ -41,6 +41,15 @@ class LiveChatSpikeDetectorTest {
     }
 
     @Test
+    fun countsMessagesThatArriveAfterTheirBucketWasFinalized() {
+        val detector = LiveChatSpikeDetector()
+        detector.completeBucketsThrough(10_000L)
+        assertEquals(false, detector.addMessage(9_999L))
+        assertEquals(1L, detector.lateMessageCount)
+        assertEquals(true, detector.addMessage(10_000L))
+    }
+
+    @Test
     fun rejectsInvalidBucketDuration() {
         assertThrows(IllegalArgumentException::class.java) {
             LiveChatSpikeDetector(bucketDurationMs = 0L)
