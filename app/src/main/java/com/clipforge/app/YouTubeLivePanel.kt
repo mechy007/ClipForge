@@ -38,6 +38,7 @@ import kotlin.coroutines.coroutineContext
 fun YouTubeLivePanel(
     database: ProjectDatabase,
     visible: Boolean = true,
+    initialVideoUrl: String = "",
     onMonitoringStarted: () -> Unit,
     onActiveSessionChanged: (Long?) -> Unit,
     onMarker: (LiveChatHighlightMarker) -> Unit,
@@ -65,6 +66,13 @@ fun YouTubeLivePanel(
         if (restoredMarkers.isNotEmpty()) onMarkersRestored(restoredMarkers)
     }
 
+    LaunchedEffect(initialVideoUrl) {
+        if (initialVideoUrl.isNotBlank() && monitorJob?.isActive != true) {
+            videoInput = initialVideoUrl
+            status = "YouTube link recognised. Add your API key to monitor a live broadcast; ordinary videos must be imported as local files."
+        }
+    }
+
     DisposableEffect(monitorJob) {
         val activeJob = monitorJob
         onDispose { activeJob?.cancel() }
@@ -83,6 +91,11 @@ fun YouTubeLivePanel(
         ) {
             Text("YOUTUBE LIVE", color = Color(0xFF9B83FF), fontWeight = FontWeight.Bold)
             Text("Chat-driven highlight markers", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "This tool reads public live-chat activity and creates timestamps. It does not download or import YouTube video playback. For ordinary videos, use a video file you own or are authorised to process.",
+                color = Color(0xFF9A9AA9),
+                style = MaterialTheme.typography.bodySmall
+            )
             OutlinedTextField(
                 value = videoInput,
                 onValueChange = { videoInput = it },
