@@ -800,8 +800,21 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         Slider(editEnd.toFloat(), { editEnd = it.toLong() }, valueRange = (editStart + 1000).toFloat()..duration.coerceAtLeast(editStart + 1000).toFloat())
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { editing = null }, modifier = Modifier.weight(1f)) { Text("Close") }
-                            Button(onClick = { save(clip.copy(startMs = editStart, endMs = editEnd)); editing = null },
-                                enabled = editEnd > editStart, modifier = Modifier.weight(1f)) { Text("Export edit") }
+                            Button(
+                                onClick = {
+                                    val trimmed = clip.copy(startMs = editStart, endMs = editEnd)
+                                    activeProjectId?.let { projectDb.updateHighlightTrim(it, clip.startMs, clip.endMs, editStart, editEnd) }
+                                    clips = clips.map { if (it == clip) trimmed else it }
+                                    selectedClips = selectedClips.map { if (it == clip) trimmed else it }.toSet()
+                                    reviewed = reviewed.entries.associate { (candidate, decision) ->
+                                        (if (candidate == clip) trimmed else candidate) to decision
+                                    }
+                                    save(trimmed)
+                                    editing = null
+                                },
+                                enabled = editStart >= 0L && editEnd > editStart && editEnd <= duration,
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Save trim & export") }
                         }
                     }
                 }

@@ -169,6 +169,16 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
         return rows
     }
 
+    fun updateHighlightTrim(projectId: Long, oldStartMs: Long, oldEndMs: Long, newStartMs: Long, newEndMs: Long): Boolean {
+        require(newStartMs >= 0L && newEndMs > newStartMs)
+        return writableDatabase.update(
+            "highlights",
+            ContentValues().apply { put("start_ms", newStartMs); put("end_ms", newEndMs) },
+            "project_id=? AND start_ms=? AND end_ms=?",
+            arrayOf(projectId.toString(), oldStartMs.toString(), oldEndMs.toString())
+        ) > 0
+    }
+
     fun updateHighlightReview(projectId: Long, startMs: Long, endMs: Long, status: String): Boolean {
         require(status in setOf("PENDING", "APPROVED", "REJECTED"))
         return writableDatabase.update(
