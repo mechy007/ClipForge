@@ -73,6 +73,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         stream = RtmpStream(applicationContext, this)
         stream.getStreamClient().setReTries(5)
+        stream.getStreamClient().setLogs(false)
         setContent {
             MaterialTheme {
                 CreatorLiveStudioScreen(
@@ -229,7 +230,10 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
     }
 
     override fun onAuthError() {
-        runOnUiThread { status = "YouTube rejected the stream key · check it in YouTube Studio. Local recording remains active." }
+        runOnUiThread {
+            status = "YouTube rejected the stream key · check it in YouTube Studio. Local recording remains active."
+            if (stream.isStreaming) stream.stopStream()
+        }
     }
 
     override fun onAuthSuccess() {
