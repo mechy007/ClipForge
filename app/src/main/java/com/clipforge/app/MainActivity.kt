@@ -218,7 +218,7 @@ private fun ClipForgeHome() {
                             }
                         }
                     },
-                    enabled = video != null && duration > 0L,
+                    enabled = video != null && duration > 0L && !analyzing,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Create clips from live markers") }
             }
