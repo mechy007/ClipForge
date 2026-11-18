@@ -153,7 +153,7 @@ object HighlightDetector {
             (if (words.size in 18..90) 0.45f else 0.2f)).coerceIn(0f, 1f)
 
         val first = rows.firstOrNull()
-        val opening = if (first != null && first.startMs - start <= 4_000L) 1f else 0.35f
+        val opening = if (first != null && (max(first.startMs, start) - start) <= 4_000L) 1f else 0.35f
 
         return HighlightFeatures(density, hooks, punctuation, vocabulary, context, novelty, clarity, opening)
     }
