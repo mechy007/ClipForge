@@ -218,6 +218,20 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         }
         pendingCaptionCues = null
     }
+    val transcriptPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { dest ->
+        if (dest != null) {
+            try {
+                val output = context.contentResolver.openOutputStream(dest, "w")
+                    ?: error("Could not open the selected transcript save location.")
+                output.use { it.write(TranscriptTextExport.format(transcriptSegments).toByteArray(Charsets.UTF_8)) }
+                exportMessage = "Full transcript exported as TXT."
+            } catch (error: Exception) {
+                exportMessage = "Transcript export failed: ${error.localizedMessage ?: "unknown error"}"
+            }
+        } else {
+            exportMessage = "Transcript export cancelled."
+        }
+    }
     fun save(clip: ClipCandidate) {
         pending = clip
         savePicker.launch("ClipForge_${clip.startMs / 1000}s.mp4")
@@ -550,6 +564,14 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                     TextButton(onClick = { selectedClips = if (selectedClips.size == clips.size) emptySet() else clips.toSet() }, enabled = !batchExporting) {
                         Text(if (selectedClips.size == clips.size) "Deselect all" else "Select all")
+                    }
+                }
+                if (transcriptSegments.isNotEmpty()) {
+                    OutlinedButton(
+                        onClick = { transcriptPicker.launch("ClipForge_transcript.txt") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Export full timestamped transcript (.TXT)")
                     }
                 }
                 Text("Export format", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
