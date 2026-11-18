@@ -81,13 +81,18 @@ private fun ScreenCaptureSetupScreen() {
         }
     }
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
+    val runtimePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val audioGranted = grants[Manifest.permission.RECORD_AUDIO] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val notificationsGranted = Build.VERSION.SDK_INT < 33 ||
+            grants[Manifest.permission.POST_NOTIFICATIONS] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (audioGranted && notificationsGranted) {
             projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
         } else {
-            status = "Allow notifications so Android can show the persistent capture controls and Stop action."
+            status = "Grant audio-capture and notification permissions so ClipForge can capture game audio and show the Stop control."
         }
     }
 
@@ -103,10 +108,18 @@ private fun ScreenCaptureSetupScreen() {
             return
         }
         pendingEndpoint = "$base/$key"
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        val missing = buildList {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                add(Manifest.permission.RECORD_AUDIO)
+            }
+            if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        if (missing.isNotEmpty()) {
+            runtimePermissionLauncher.launch(missing.toTypedArray())
         } else {
             projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
         }
