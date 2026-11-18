@@ -93,7 +93,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var message by remember { mutableStateOf(if (initialVideoUri == null) "Import a video to discover its best moments." else "Your creator live recording is ready. Run AI highlight detection.") }
     var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
     var selectedClips by remember { mutableStateOf<Set<ClipCandidate>>(emptySet()) }
-    var batchExporting by remember { mutableStateOf(false) }
+    val batchStatus by BatchExportCoordinator.status.collectAsState()
+    val batchExporting = batchStatus.running
     var activeSection by remember { mutableStateOf("Studio") }
     var liveMarkers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
     var activeLiveSessionId by remember { mutableStateOf<Long?>(null) }
@@ -131,17 +132,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             try {
                 context.contentResolver.takePersistableUriPermission(treeUri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             } catch (_: SecurityException) { }
-            scope.launch {
-                batchExporting = true
-                try {
-                    val completed = BatchClipExporter.exportAll(context, treeUri, source, chosen) { done, total, title ->
-                        exportMessage = "Exporting $done / $total · $title"
-                    }
-                    exportMessage = "Batch export complete · $completed clips saved and verified. Source video kept for safety."
-                } catch (error: Exception) {
-                    exportMessage = "Batch export stopped: ${error.localizedMessage ?: "unknown error"}. Completed clips remain saved; retry the remaining clips."
-                } finally { batchExporting = false }
-            }
+            BatchExportCoordinator.start(context, treeUri, source, chosen)
         }
     }
     val captionPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-subrip")) { dest ->
@@ -469,7 +460,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                 }
             }
-            if (exportMessage.isNotBlank()) Text(exportMessage, color = Muted, fontSize = 12.sp)
+            val visibleExportMessage = batchStatus.message.ifBlank { exportMessage }
+            if (visibleExportMessage.isNotBlank()) Text(visibleExportMessage, color = Muted, fontSize = 12.sp)
             if (activeSection == "Studio" && video == null) {
                 Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
