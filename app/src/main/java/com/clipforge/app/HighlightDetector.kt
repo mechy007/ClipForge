@@ -75,15 +75,17 @@ object HighlightDetector {
         segments: List<TranscriptSegment>,
         durationMs: Long,
         targetDurationMs: Long = DEFAULT_WINDOW_MS,
-        audioEnergy: List<AudioEnergyWindow> = emptyList()
-    ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs, audioEnergy)
+        audioEnergy: List<AudioEnergyWindow> = emptyList(),
+        sceneCuts: List<Long> = emptyList()
+    ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs, audioEnergy, sceneCuts)
 
     fun detectWithWeights(
         segments: List<TranscriptSegment>,
         durationMs: Long,
         weights: RankingWeights,
         targetDurationMs: Long = DEFAULT_WINDOW_MS,
-        audioEnergy: List<AudioEnergyWindow> = emptyList()
+        audioEnergy: List<AudioEnergyWindow> = emptyList(),
+        sceneCuts: List<Long> = emptyList()
     ): List<ClipCandidate> {
         if (segments.isEmpty() || durationMs <= 0L) return emptyList()
         val sorted = segments.filter {
@@ -107,8 +109,13 @@ object HighlightDetector {
                 if (words.size >= MIN_WORDS) {
                     val f = features(rows, words, text, start, end)
                     val insight = PassiveClipInsights.analyse(rows, text, start, end, durationMs)
-                    val clipStart = insight.startMs.coerceIn(start, end - 1L)
-                    val clipEnd = insight.endMs.coerceIn(clipStart + 1L, end)
+                    val initialStart = insight.startMs.coerceIn(start, end - 1L)
+                    val initialEnd = insight.endMs.coerceIn(initialStart + 1L, end)
+                    val refined = ClipBoundaryRefiner.refine(
+                        initialStart, initialEnd, durationMs, rows, audioEnergy, sceneCuts
+                    )
+                    val clipStart = refined.first.coerceIn(start, end - 1L)
+                    val clipEnd = refined.second.coerceIn(clipStart + 1L, end)
                     val transcriptScore = weights.score(f)
                     val audioScore = audioReference?.let { reference ->
                         AudioSignalScorer.score(clipStart, clipEnd, audioEnergy, reference.rms, reference.peak)
@@ -121,6 +128,7 @@ object HighlightDetector {
                         title = insight.suggestedTitle,
                         hook = text.take(180), score = combinedScore,
                         reason = weights.explain(f) + audioReason +
+                            if (sceneCuts.isNotEmpty() || audioEnergy.isNotEmpty()) " Boundaries refined using silence and scene-change signals." else "" +
                             " Category: " + insight.category + ". " + insight.note
                     )
                 }
