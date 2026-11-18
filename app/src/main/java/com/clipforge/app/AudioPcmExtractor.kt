@@ -163,6 +163,10 @@ object AudioPcmExtractor {
 
             check(outputSamplesWritten > 0L) { "No decodable audio samples were found." }
             outputSamplesWritten
+        } catch (mediaCodecError: Exception) {
+            currentCoroutineContext().ensureActive()
+            outputFile.delete()
+            FfmpegAudioFallback.decodeToMono16Khz(context, uri, outputFile)
         } finally {
             if (started) {
                 try { decoder?.stop() } catch (_: Exception) { }
