@@ -27,7 +27,20 @@ object BatchClipExporter {
         val treeDocumentId = DocumentsContract.getTreeDocumentId(folder)
         val parentDocument = DocumentsContract.buildDocumentUriUsingTree(folder, treeDocumentId)
         var completed = 0
+        var batchSourceCache: java.io.File? = null
+        val exportSource = if (faceTrackingPath.isNotEmpty() && source.scheme != "file") {
+            val cached = java.io.File(context.cacheDir, "clipforge_batch_source_${System.nanoTime()}.mp4")
+            withContext(Dispatchers.IO) {
+                resolver.openInputStream(source)?.use { input ->
+                    cached.outputStream().buffered().use { output -> input.copyTo(output) }
+                } ?: error("Could not read the source video for face-aware batch export.")
+            }
+            check(cached.isFile && cached.length() > 0L) { "The cached batch source video is empty." }
+            batchSourceCache = cached
+            Uri.fromFile(cached)
+        } else source
 
+        try {
         clips.forEachIndexed { index, clip ->
             val safeTitle = clip.title.replace(Regex("[^A-Za-z0-9._-]+"), "_")
                 .trim('_').take(32).ifBlank { "Highlight" }
@@ -46,7 +59,7 @@ object BatchClipExporter {
 
             val result = suspendCancellableCoroutine<Pair<Boolean, String>> { continuation ->
                 ClipExporter.export(
-                    context, source, destination, clip.startMs, clip.endMs,
+                    context, exportSource, destination, clip.startMs, clip.endMs,
                     aspectRatio = aspectRatio,
                     faceTrackingPath = faceTrackingPath,
                     captionCues = if (transcript.isEmpty()) emptyList() else CaptionTrack.fromTranscript(transcript, clip.startMs, clip.endMs),
@@ -87,5 +100,8 @@ object BatchClipExporter {
             onProgress(completed, clips.size, clip)
         }
         return completed
+        } finally {
+            batchSourceCache?.delete()
+        }
     }
 }
