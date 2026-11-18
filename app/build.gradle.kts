@@ -91,8 +91,8 @@ android {
         applicationId = "com.clipforge.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.1"
+        versionCode = 7
+        versionName = "0.6.2"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild { cmake { cppFlags += listOf("-std=c++17") } }
     }
