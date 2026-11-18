@@ -3,6 +3,86 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val whisperModelSize = 77_691_713L
+val whisperModelSha256 = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
+val whisperModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin"
+val whisperAssetDirectory = layout.buildDirectory.dir("generated/whisper-model-assets")
+val whisperAssetFile = whisperAssetDirectory.map { it.file("models/ggml-tiny.bin") }
+
+val prepareWhisperModel by tasks.registering {
+    group = "build setup"
+    description = "Fetches and verifies the offline Whisper model for packaging inside the APK."
+    outputs.file(whisperAssetFile)
+
+    doLast {
+        val destination = whisperAssetFile.get().asFile
+        fun sha256(file: java.io.File): String {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            return digest.digest().joinToString("") {
+                (it.toInt() and 0xff).toString(16).padStart(2, '0')
+            }
+        }
+
+        if (destination.isFile && destination.length() == whisperModelSize &&
+            sha256(destination) == whisperModelSha256
+        ) {
+            logger.lifecycle("Verified bundled Whisper model already exists.")
+            return@doLast
+        }
+
+        destination.parentFile.mkdirs()
+        val temporary = java.io.File(destination.parentFile, destination.name + ".part")
+        temporary.delete()
+        val connection = (java.net.URL(whisperModelUrl).openConnection() as java.net.HttpURLConnection).apply {
+            connectTimeout = 20_000
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            requestMethod = "GET"
+        }
+
+        try {
+            connection.connect()
+            check(connection.responseCode in 200..299) {
+                "Whisper model fetch failed (HTTP ${connection.responseCode})."
+            }
+            connection.inputStream.use { input ->
+                temporary.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+            check(temporary.length() == whisperModelSize) {
+                "Whisper model size verification failed: expected $whisperModelSize bytes, got ${temporary.length()}."
+            }
+            check(sha256(temporary) == whisperModelSha256) {
+                "Whisper model SHA-256 verification failed; refusing to package the file."
+            }
+            check(temporary.renameTo(destination)) {
+                "Could not move the verified Whisper model into generated APK assets."
+            }
+            logger.lifecycle("Whisper tiny model verified and ready to bundle in the APK.")
+        } catch (error: Throwable) {
+            temporary.delete()
+            throw error
+        } finally {
+            connection.disconnect()
+        }
+    }
+}
+
 android {
     namespace = "com.clipforge.app"
     compileSdk = 35
@@ -28,7 +108,14 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
+    sourceSets.getByName("main").assets.srcDir(whisperAssetDirectory)
+    androidResources { noCompress += "bin" }
 }
+
+tasks.named("preBuild").configure {
+    dependsOn(prepareWhisperModel)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
