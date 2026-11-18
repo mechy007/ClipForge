@@ -55,6 +55,7 @@ private fun ScreenCaptureSetupScreen() {
     val context = LocalContext.current
     val activity = context as ComponentActivity
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
+    val liveSessionId = activity.intent.getLongExtra(MainActivity.EXTRA_LIVE_SESSION_ID, -1L)
     var serverUrl by remember { mutableStateOf("rtmps://a.rtmps.youtube.com:443/live2") }
     var streamKey by remember { mutableStateOf("") }
     var pendingEndpoint by remember { mutableStateOf("") }
@@ -69,6 +70,7 @@ private fun ScreenCaptureSetupScreen() {
                 putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
                 putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
                 putExtra(ScreenCaptureService.EXTRA_RTMP_ENDPOINT, pendingEndpoint)
+                putExtra(ScreenCaptureService.EXTRA_LIVE_SESSION_ID, liveSessionId)
             }
             try {
                 ContextCompat.startForegroundService(context, serviceIntent)
@@ -132,6 +134,7 @@ private fun ScreenCaptureSetupScreen() {
         ) {
             Text("SCREEN / GAME CAPTURE", color = Color(0xFF9B83FF), fontWeight = FontWeight.Bold)
             Text("Stream gameplay. Keep the original recording.", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            if (liveSessionId > 0L) Text("Linked to your latest YouTube Live chat session · markers will align to this recording.", color = Color(0xFF75D6A2), style = MaterialTheme.typography.bodySmall)
             Text(
                 "ClipForge captures the Android screen and supported internal game/media audio, sends it over RTMPS, and records a local MP4 at the same time. It does not record microphone commentary in this mode.",
                 color = Color(0xFFB7B7C4)

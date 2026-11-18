@@ -82,6 +82,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
                     bitrate = bitrate,
                     recordingPath = recordingPath,
                     liveActive = liveActive,
+                    liveSessionLinked = intent.getLongExtra(MainActivity.EXTRA_LIVE_SESSION_ID, -1L) > 0L,
                     permissionDenied = permissionDenied,
                     onRequestPermissions = ::requestCapturePermissions,
                     onStart = ::startLiveAndRecord,
@@ -161,6 +162,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
         val file = File(directory, "ClipForge_Live_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4")
         val endpoint = "$base/$key"
         try {
+            val recordingStartMs = System.currentTimeMillis()
             stream.startRecord(file.absolutePath) { recordStatus ->
                 runOnUiThread {
                     if (recordStatus == com.pedro.library.base.recording.RecordController.Status.RECORDING) {
@@ -169,6 +171,8 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
                 }
             }
             recordingPath = file.absolutePath
+            val liveSessionId = intent.getLongExtra(MainActivity.EXTRA_LIVE_SESSION_ID, -1L)
+            if (liveSessionId > 0L) runCatching { ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, recordingStartMs, file.absolutePath) }
             liveActive = true
             stream.startStream(endpoint)
             status = "Starting secure YouTube stream · local MP4 recording is active."
@@ -259,6 +263,7 @@ private fun CreatorLiveStudioScreen(
     bitrate: Long,
     recordingPath: String?,
     liveActive: Boolean,
+    liveSessionLinked: Boolean,
     permissionDenied: Boolean,
     onRequestPermissions: () -> Unit,
     onStart: (String, String) -> Unit,
@@ -276,6 +281,7 @@ private fun CreatorLiveStudioScreen(
         ) {
             Text("CREATOR LIVE STUDIO", color = Color(0xFF9B83FF), fontWeight = FontWeight.Bold)
             Text("Stream your own feed and keep a local original recording.", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            if (liveSessionLinked) Text("Linked to your latest YouTube Live chat session · markers will align to this recording.", color = Color(0xFF75D6A2), style = MaterialTheme.typography.bodySmall)
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF171720))) {
                 if (prepared) {
                     AndroidView(

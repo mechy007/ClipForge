@@ -35,6 +35,7 @@ import kotlin.coroutines.coroutineContext
 fun YouTubeLivePanel(
     database: ProjectDatabase,
     onMonitoringStarted: () -> Unit,
+    onActiveSessionChanged: (Long?) -> Unit,
     onMarker: (LiveChatHighlightMarker) -> Unit,
     onMarkersRestored: (List<LiveChatHighlightMarker>) -> Unit
 ) {
@@ -94,7 +95,7 @@ fun YouTubeLivePanel(
                 visualTransformation = PasswordVisualTransformation()
             )
             Text(
-                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Select your own original recording in Video Studio; its timeline should begin with the broadcast.",
+                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Start monitoring before launching ClipForge camera or screen capture to align chat markers automatically. For imported recordings, verify the broadcast-to-recording offset manually and use only footage you own or are authorised to process.",
                 color = Color(0xFF9A9AA9),
                 style = MaterialTheme.typography.bodySmall
             )
@@ -103,6 +104,7 @@ fun YouTubeLivePanel(
                     if (monitorJob?.isActive == true) {
                         monitorJob?.cancel()
                         monitorJob = null
+                        onActiveSessionChanged(null)
                         status = "Monitoring stopped. Existing markers are kept on this screen."
                     } else {
                         onMonitoringStarted()
@@ -116,6 +118,7 @@ fun YouTubeLivePanel(
                                 sessionTitle = session.title
                                 val monitorStartedAtMs = System.currentTimeMillis()
                                 activeSessionId = database.saveLiveSession(session, monitorStartedAtMs)
+                                onActiveSessionChanged(activeSessionId)
                                 val startOffsetMs = (monitorStartedAtMs - session.actualStartTimeMs).coerceAtLeast(0L)
                                 val detector = LiveChatSpikeDetector(monitorStartOffsetMs = startOffsetMs)
                                 val seenIds = LinkedHashSet<String>()
@@ -162,7 +165,10 @@ fun YouTubeLivePanel(
                             } catch (error: Exception) {
                                 status = error.localizedMessage ?: "Could not monitor this live chat."
                             } finally {
-                                if (monitorJob === ownJob) monitorJob = null
+                                if (monitorJob === ownJob) {
+                                    monitorJob = null
+                                    onActiveSessionChanged(null)
+                                }
                             }
                         }
                     }

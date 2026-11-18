@@ -7,11 +7,11 @@ import android.database.sqlite.SQLiteOpenHelper
 
 data class SavedProject(val id: Long, val title: String, val sourceUri: String, val durationMs: Long, val status: String, val updatedAt: Long)
 data class SavedHighlight(val id: Long, val projectId: Long, val startMs: Long, val endMs: Long, val title: String, val transcript: String, val score: Int, val exportedUri: String?)
-data class SavedLiveSession(val id: Long, val videoId: String, val title: String, val broadcastStartMs: Long, val monitoringStartedAtMs: Long)
+data class SavedLiveSession(val id: Long, val videoId: String, val title: String, val broadcastStartMs: Long, val monitoringStartedAtMs: Long, val recordingStartMs: Long, val recordingOffsetMs: Long, val recordingPath: String)
 data class SavedLiveMarker(val id: Long, val sessionId: Long, val startMs: Long, val messageCount: Int, val baselineMedian: Double, val reason: String)
 
 /** Local SQLite persistence. Media files remain outside the database. */
-class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationContext, "clipforge_projects.db", null, 3) {
+class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationContext, "clipforge_projects.db", null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, source_uri TEXT NOT NULL, duration_ms INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'draft', updated_at INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE highlights (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, title TEXT NOT NULL, transcript TEXT NOT NULL, score INTEGER NOT NULL, exported_uri TEXT)")
@@ -23,10 +23,17 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createTranscriptTable(db)
         if (oldVersion < 3) createLiveTables(db)
+        if (oldVersion >= 3 && oldVersion < 4) {
+            db.execSQL("ALTER TABLE live_sessions ADD COLUMN recording_start_ms INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE live_sessions ADD COLUMN recording_offset_ms INTEGER NOT NULL DEFAULT 0")
+        }
+        if (oldVersion >= 3 && oldVersion < 5) {
+            db.execSQL("ALTER TABLE live_sessions ADD COLUMN recording_path TEXT NOT NULL DEFAULT ''")
+        }
     }
 
     private fun createLiveTables(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS live_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, video_id TEXT NOT NULL, title TEXT NOT NULL, broadcast_start_ms INTEGER NOT NULL, monitoring_started_at_ms INTEGER NOT NULL, created_at INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS live_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, video_id TEXT NOT NULL, title TEXT NOT NULL, broadcast_start_ms INTEGER NOT NULL, monitoring_started_at_ms INTEGER NOT NULL, recording_start_ms INTEGER NOT NULL DEFAULT 0, recording_offset_ms INTEGER NOT NULL DEFAULT 0, recording_path TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS live_markers (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES live_sessions(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, message_count INTEGER NOT NULL, baseline_median REAL NOT NULL, reason TEXT NOT NULL)")
         db.execSQL("CREATE INDEX IF NOT EXISTS live_markers_session_idx ON live_markers(session_id, start_ms)")
     }
@@ -102,6 +109,27 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
         })
     }
 
+    fun saveLiveRecordingStart(sessionId: Long, recordingStartMs: Long, recordingPath: String): Boolean {
+        if (sessionId <= 0L || recordingStartMs <= 0L || recordingPath.isBlank()) return false
+        val broadcastStartMs = readableDatabase.query(
+            "live_sessions", arrayOf("broadcast_start_ms"),
+            "id=?", arrayOf(sessionId.toString()), null, null, null, "1"
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0) else return false
+        }
+        val offsetMs = recordingStartMs - broadcastStartMs
+        val updated = writableDatabase.update(
+            "live_sessions",
+            ContentValues().apply {
+                put("recording_start_ms", recordingStartMs)
+                put("recording_offset_ms", offsetMs)
+                put("recording_path", recordingPath)
+            },
+            "id=?", arrayOf(sessionId.toString())
+        )
+        return updated == 1
+    }
+
     fun saveLiveMarker(sessionId: Long, marker: LiveChatHighlightMarker): Long {
         require(sessionId > 0L && marker.startMs >= 0L && marker.messageCount > 0)
         return writableDatabase.insertOrThrow("live_markers", null, ContentValues().apply {
@@ -116,10 +144,10 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
     fun listLiveSessions(limit: Int = 20): List<SavedLiveSession> {
         val rows = mutableListOf<SavedLiveSession>()
         readableDatabase.query(
-            "live_sessions", arrayOf("id", "video_id", "title", "broadcast_start_ms", "monitoring_started_at_ms"),
+            "live_sessions", arrayOf("id", "video_id", "title", "broadcast_start_ms", "monitoring_started_at_ms", "recording_start_ms", "recording_offset_ms", "recording_path"),
             null, null, null, null, "created_at DESC", limit.coerceIn(1, 100).toString()
         ).use { c ->
-            while (c.moveToNext()) rows += SavedLiveSession(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3), c.getLong(4))
+            while (c.moveToNext()) rows += SavedLiveSession(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3), c.getLong(4), c.getLong(5), c.getLong(6), c.getString(7))
         }
         return rows
     }

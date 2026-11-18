@@ -14,6 +14,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Export each selected or edited clip as a vertical 9:16 MP4 using Media3 Transformer (center crop; face-aware tracking is a later milestone).
 - Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
 - Monitor public YouTube Live chat through the official Data API, detect activity spikes, and persist live sessions and timestamp markers in SQLite so they survive screen and app restarts.
+- When capture is started from an existing monitored session, save the local recording start time and automatically convert broadcast-relative chat markers to the recording timeline. For automatic alignment, start YouTube Live chat monitoring first, then start the camera or screen capture.
 - Stream the creator’s own camera/microphone feed to an RTMPS endpoint while recording a local MP4 simultaneously; import the completed recording directly into Video Studio.
 - Capture the Android device screen and supported internal game/media audio through Android MediaProjection, stream it over RTMPS from a foreground service, and record a local MP4 simultaneously. A completed recording opens directly in Video Studio.
 - Keep selected video, decoded audio, transcription and highlight scoring on-device; no AI API or remote video processing backend is used.
@@ -39,7 +40,7 @@ The Whisper model is downloaded from its published model repository and stored i
 - Aspect-ratio-aware 9:16, 16:9 and 1:1 rendering.
 - Subject-aware reframing and face tracking.
 - Batch export, export progress, cancellation and recovery.
-- Durable background YouTube Live chat monitoring and broadcast-to-recording offset calibration. Marker/session persistence and foreground screen capture are implemented.
+- Durable background YouTube Live chat monitoring and multi-recording/session selection. Session persistence, recording-start alignment and foreground screen capture are implemented.
 - Device performance, thermal and battery profiling.
 
 ## Licensing
