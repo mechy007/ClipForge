@@ -357,7 +357,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
             }
             if (activeSection == "Studio") {
-            OutlinedTextField(value = linkText, onValueChange = { linkText = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Direct video link (MP4/WebM)") }, singleLine = true)
+            OutlinedTextField(value = linkText, onValueChange = { linkText = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Direct video file URL (MP4/WebM/MOV/MKV)") }, singleLine = true)
+            Text("YouTube links are recognised and sent to Live for chat markers. To edit a regular video, import a permitted video file from your phone.", color = Muted, fontSize = 10.sp)
             OutlinedButton(onClick = {
                 scope.launch {
                     if (YouTubeLinkClassifier.isYouTubeUrl(linkText)) {
