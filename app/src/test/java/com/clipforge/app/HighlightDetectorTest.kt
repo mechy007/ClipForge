@@ -54,3 +54,26 @@ class HighlightDetectorTest {
         }
     }
 }
+
+
+class LiveMarkerTimelineTest {
+    @Test
+    fun convertsBroadcastTimeToRecordingRelativeTime() {
+        assertEquals(12_000L, LiveMarkerTimeline.toRecordingTime(42_000L, 30_000L))
+    }
+
+    @Test
+    fun rejectsMarkersBeforeRecordingStart() {
+        assertEquals(null, LiveMarkerTimeline.toRecordingTime(29_999L, 30_000L))
+    }
+
+    @Test
+    fun rejectsNegativeBroadcastTime() {
+        assertEquals(null, LiveMarkerTimeline.toRecordingTime(-1L, 0L))
+    }
+
+    @Test
+    fun supportsMarkerExactlyAtRecordingStart() {
+        assertEquals(0L, LiveMarkerTimeline.toRecordingTime(30_000L, 30_000L))
+    }
+}
