@@ -16,6 +16,7 @@ object BatchClipExporter {
         folder: Uri,
         source: Uri,
         clips: List<ClipCandidate>,
+        aspectRatio: Float = 9f / 16f,
         onProgress: (Int, Int, ClipCandidate) -> Unit = { _, _, _ -> }
     ): Int {
         require(clips.isNotEmpty()) { "No highlights were selected." }
@@ -38,6 +39,7 @@ object BatchClipExporter {
             val result = suspendCancellableCoroutine<Pair<Boolean, String>> { continuation ->
                 ClipExporter.export(
                     context, source, destination, clip.startMs, clip.endMs,
+                    aspectRatio = aspectRatio,
                     onStatus = { },
                     onFinished = { success, message ->
                         if (continuation.isActive) continuation.resume(success to message)
