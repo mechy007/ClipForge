@@ -9,14 +9,22 @@ data class SavedProject(val id: Long, val title: String, val sourceUri: String, 
 data class SavedHighlight(val id: Long, val projectId: Long, val startMs: Long, val endMs: Long, val title: String, val transcript: String, val score: Int, val exportedUri: String?)
 
 /** Local SQLite persistence. Media files remain outside the database. */
-class ProjectDatabase(context: Context) : SQLiteOpenHelper(context, "clipforge_projects.db", null, 1) {
+class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationContext, "clipforge_projects.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, source_uri TEXT NOT NULL, duration_ms INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'draft', updated_at INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE highlights (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, title TEXT NOT NULL, transcript TEXT NOT NULL, score INTEGER NOT NULL, exported_uri TEXT)")
         db.execSQL("CREATE INDEX highlights_project_idx ON highlights(project_id)")
+        createTranscriptTable(db)
     }
     override fun onConfigure(db: SQLiteDatabase) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true) }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { /* Add explicit migrations before changing the schema version. */ }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createTranscriptTable(db)
+    }
+
+    private fun createTranscriptTable(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS transcript_segments (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, text TEXT NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS transcript_project_time_idx ON transcript_segments(project_id, start_ms)")
+    }
 
     fun saveProject(title: String, sourceUri: String, durationMs: Long, status: String = "analyzed"): Long {
         require(title.isNotBlank() && sourceUri.isNotBlank())
@@ -38,6 +46,40 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context, "clipforge_p
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }
+
+    fun saveTranscript(projectId: Long, segments: List<TranscriptSegment>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("transcript_segments", "project_id=?", arrayOf(projectId.toString()))
+            segments.forEach { segment ->
+                if (segment.startMs < 0L || segment.endMs <= segment.startMs || segment.text.isBlank()) return@forEach
+                db.insertOrThrow("transcript_segments", null, ContentValues().apply {
+                    put("project_id", projectId)
+                    put("start_ms", segment.startMs)
+                    put("end_ms", segment.endMs)
+                    put("text", segment.text)
+                })
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun listTranscript(projectId: Long): List<TranscriptSegment> {
+        val rows = mutableListOf<TranscriptSegment>()
+        readableDatabase.query(
+            "transcript_segments", arrayOf("start_ms", "end_ms", "text"),
+            "project_id=?", arrayOf(projectId.toString()), null, null, "start_ms ASC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                rows += TranscriptSegment(cursor.getLong(0), cursor.getLong(1), cursor.getString(2))
+            }
+        }
+        return rows
+    }
+
     fun saveExport(highlightId: Long, uri: String) {
         writableDatabase.update("highlights", ContentValues().apply { put("exported_uri", uri) }, "id=?", arrayOf(highlightId.toString()))
     }
