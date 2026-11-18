@@ -11,6 +11,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Transcribe audio in bounded 30-second chunks and retain timestamped transcript segments.
 - Detect candidate 30-second highlights using offline transcript signals (speech density, hook words, punctuation and vocabulary variety).
 - Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
+- Select individual detected highlights or all highlights, then export them individually or sequentially as a batch into a chosen Android folder. Each batch output is verified before it is marked complete; interrupted batches can resume remaining clips without re-exporting verified clips while the app process remains alive.
 - Export each selected or edited clip as a vertical 9:16 MP4 using Media3 Transformer (center crop; face-aware tracking is a later milestone).
 - Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
 - Monitor public YouTube Live chat through the official Data API, detect activity spikes, and persist live sessions and timestamp markers in SQLite so they survive screen and app restarts.
@@ -31,7 +32,7 @@ Highlight scores are heuristic estimates of content signals. They do not predict
 The Whisper model is downloaded from its published model repository and stored in app-private storage. Temporary decoded PCM is written to the app cache and deleted after transcription. The app does not upload the selected video or its audio.
 
 ## Current limitations
-- The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed.
+- The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed. Batch export progress survives Activity recreation but is not yet recoverable after Android terminates the app process.
 - Direct-link import supports direct HTTPS media files only, not YouTube or social-platform pages. The YouTube Live integration reads metadata/chat only; it does not download or record YouTube playback. Creator Live Studio captures a new camera/microphone feed that the user owns. The camera studio requires a manually supplied RTMPS server URL and stream key and runs while its activity stays open. Screen/game capture requires Android 10+, user-approved MediaProjection, Android audio permission for playback capture, notification permission, and a manually supplied RTMPS server URL/key. It captures supported internal game/media audio, not microphone commentary. Internal audio depends on the source app allowing playback capture; protected apps may block it. Set screen orientation before starting. Neither studio creates broadcasts through YouTube OAuth.
 - Durable background processing, animated/burned-in caption rendering, aspect-ratio rendering and face-aware reframing are not yet complete. SRT sidecar export is available separately.
 
@@ -39,7 +40,7 @@ The Whisper model is downloaded from its published model repository and stored i
 - Animated caption styles and subtitle export.
 - Aspect-ratio-aware 9:16, 16:9 and 1:1 rendering.
 - Subject-aware reframing and face tracking.
-- Batch export, export progress, cancellation and recovery.
+- Durable batch-export recovery after process termination and explicit cancellation controls.
 - Durable background YouTube Live chat monitoring and multi-recording/session selection. Session persistence, recording-start alignment and foreground screen capture are implemented.
 - Device performance, thermal and battery profiling.
 
