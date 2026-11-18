@@ -2,6 +2,7 @@ package com.clipforge.app
 
 import android.net.Uri
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.OpenableColumns
@@ -49,11 +50,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private val Ink = Color(0xFF09090B)
-private val Panel = Color(0xFF16161B)
-private val Violet = Color(0xFF6366F1)
-private val Muted = Color(0xFFA1A1AA)
-private val Cyan = Color(0xFF06B6D4)
+private val Ink = Color(0xFF101318)
+private val Panel = Color(0xFF1B2028)
+private val Violet = Color(0xFFB7C9FF)
+private val Muted = Color(0xFFBFC5D0)
+private val Cyan = Color(0xFF8FD8D2)
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -65,7 +66,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val liveRecording = intent.getStringExtra(EXTRA_LIVE_RECORDING_PATH)
             ?.let { Uri.fromFile(java.io.File(it)) }
-        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Violet, background = Ink, surface = Panel)) { ClipForgeHome(liveRecording) } }
+        setContent {
+            val scheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) dynamicDarkColorScheme(this)
+                else darkColorScheme(primary = Violet, secondary = Color(0xFF9CCBFA), tertiary = Cyan, background = Ink, surface = Panel)
+            MaterialTheme(colorScheme = scheme) { ClipForgeHome(liveRecording) }
+        }
     }
 }
 
@@ -139,6 +144,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var editing by remember { mutableStateOf<ClipCandidate?>(null) }
     var editStart by remember { mutableLongStateOf(0L) }
     var editEnd by remember { mutableLongStateOf(0L) }
+    var editorStartMs by rememberSaveable { mutableLongStateOf(0L) }
+    var editorEndMs by rememberSaveable { mutableLongStateOf(0L) }
     var exportMessage by remember { mutableStateOf("") }
     var exportAspectRatio by rememberSaveable { mutableFloatStateOf(9f / 16f) }
     var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
@@ -306,7 +313,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             Text("Make every moment count.", fontSize = 23.sp, fontWeight = FontWeight.Bold)
             Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf("Studio", "Highlights", "Projects", "Live").forEach { section ->
+                listOf("Studio", "Editor", "Highlights", "Projects", "Live").forEach { section ->
                     Box(
                         Modifier.weight(1f).clip(RoundedCornerShape(11.dp))
                             .background(if (activeSection == section) Violet.copy(alpha = .2f) else Panel)
@@ -317,6 +324,45 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         Text(section, color = if (activeSection == section) Color.White else Muted,
                             fontSize = 10.sp, fontWeight = if (activeSection == section) FontWeight.Bold else FontWeight.Medium)
                     }
+                }
+            }
+            if (activeSection == "Editor") {
+                val source = video
+                when {
+                    source == null -> Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Default.Movie, null, tint = Violet, modifier = Modifier.size(30.dp))
+                            Text("Mini editor", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text("Import a video to open the timeline editor.", color = Muted, fontSize = 12.sp)
+                            Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.FolderOpen, null)
+                                Text("  Import video")
+                            }
+                        }
+                    }
+                    duration <= 0L -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                    else -> MiniEditorWorkspace(
+                        uri = source,
+                        sourceName = videoDisplayName,
+                        durationMs = duration,
+                        initialStartMs = editorStartMs.coerceIn(0L, (duration - 500L).coerceAtLeast(0L)),
+                        initialEndMs = if (editorEndMs <= 0L || editorEndMs > duration) duration else editorEndMs,
+                        aspectRatio = exportAspectRatio,
+                        burnCaptions = burnCaptions,
+                        onStartChange = { editorStartMs = it },
+                        onEndChange = { editorEndMs = it },
+                        onAspectRatioChange = { ratio ->
+                            exportAspectRatio = ratio
+                            exportAspectLabel = when (ratio) {
+                                1f -> "1:1 Square"
+                                else -> if (ratio < 1f) "9:16 Shorts" else "16:9 YouTube"
+                            }
+                        },
+                        onBurnCaptionsChange = { burnCaptions = it },
+                        onExport = { startMs, endMs ->
+                            save(ClipCandidate(startMs, endMs, "Manual edit", "", 0, "Edited in timeline"))
+                        }
+                    )
                 }
             }
             if (activeSection == "Studio" && video != null) {
