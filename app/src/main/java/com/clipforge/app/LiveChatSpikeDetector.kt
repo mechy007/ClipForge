@@ -22,8 +22,7 @@ class LiveChatSpikeDetector(
 ) {
     private val bucketCounts = sortedMapOf<Long, Int>()
     private val history = ArrayDeque<Int>()
-    private var nextBucketStartMs =
-        (monitorStartOffsetMs.coerceAtLeast(0L) / bucketDurationMs) * bucketDurationMs
+    private var nextBucketStartMs = 0L
     private var lastMarkerMs = Long.MIN_VALUE
 
     init {
@@ -32,6 +31,8 @@ class LiveChatSpikeDetector(
         require(baselineBuckets >= minimumBaselineSamples && minimumBaselineSamples > 0)
         require(spikeMultiplier > 0.0)
         require(cooldownMs >= 0L)
+        nextBucketStartMs =
+            (monitorStartOffsetMs.coerceAtLeast(0L) / bucketDurationMs) * bucketDurationMs
     }
 
     fun addMessage(broadcastOffsetMs: Long) {
