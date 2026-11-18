@@ -567,11 +567,28 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                 }
                 if (transcriptSegments.isNotEmpty()) {
-                    OutlinedButton(
-                        onClick = { transcriptPicker.launch("ClipForge_transcript.txt") },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Export full timestamped transcript (.TXT)")
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                                clipboard?.setPrimaryClip(
+                                    android.content.ClipData.newPlainText(
+                                        "ClipForge transcript",
+                                        TranscriptTextExport.format(transcriptSegments)
+                                    )
+                                )
+                                exportMessage = if (clipboard != null) "Transcript copied to clipboard." else "Could not access the clipboard."
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Copy transcript")
+                        }
+                        Button(
+                            onClick = { transcriptPicker.launch("ClipForge_transcript.txt") },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Export TXT")
+                        }
                     }
                 }
                 Text("Export format", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
