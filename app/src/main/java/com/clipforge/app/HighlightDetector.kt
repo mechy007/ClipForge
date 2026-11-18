@@ -123,12 +123,14 @@ object HighlightDetector {
                     val combinedScore = if (audioScore == null) transcriptScore
                         else (transcriptScore * 0.82f + audioScore * 0.18f).toInt().coerceIn(0, 100)
                     val audioReason = audioScore?.let { " Audio activity signal: $it/100." } ?: ""
+                    val boundaryReason = if (sceneCuts.isNotEmpty() || audioEnergy.isNotEmpty()) {
+                        " Boundaries checked against silence and scene-change signals."
+                    } else ""
                     candidates += ClipCandidate(
                         startMs = clipStart, endMs = clipEnd,
                         title = insight.suggestedTitle,
                         hook = text.take(180), score = combinedScore,
-                        reason = weights.explain(f) + audioReason +
-                            if (sceneCuts.isNotEmpty() || audioEnergy.isNotEmpty()) " Boundaries refined using silence and scene-change signals." else "" +
+                        reason = weights.explain(f) + audioReason + boundaryReason +
                             " Category: " + insight.category + ". " + insight.note
                     )
                 }

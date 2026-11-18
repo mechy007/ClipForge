@@ -876,7 +876,14 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     listOf("9:16 Shorts" to (9f / 16f), "16:9 YouTube" to (16f / 9f), "1:1 Square" to 1f).forEach { (label, ratio) ->
                         FilterChip(
                             selected = exportAspectLabel == label,
-                            onClick = { exportAspectLabel = label; exportAspectRatio = ratio },
+                            onClick = {
+                                if (exportAspectRatio != ratio) {
+                                    faceTrackingPath = emptyList()
+                                    faceTrackingMessage = "Output ratio changed. Re-analyze faces before exporting for accurate framing."
+                                }
+                                exportAspectLabel = label
+                                exportAspectRatio = ratio
+                            },
                             label = { Text(label, fontSize = 11.sp) },
                             enabled = !batchExporting
                         )
