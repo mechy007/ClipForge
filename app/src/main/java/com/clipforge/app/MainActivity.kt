@@ -90,6 +90,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var duration by remember { mutableLongStateOf(0L) }
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var transcriptLanguage by rememberSaveable { mutableStateOf("auto") }
+    var targetClipDurationMs by rememberSaveable { mutableLongStateOf(30_000L) }
     var languageMenuExpanded by remember { mutableStateOf(false) }
     var preparingModel by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
@@ -647,6 +648,18 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
 
             if (video != null) {
+                Text("TARGET SHORT LENGTH", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    listOf(15_000L to "15 sec", 30_000L to "30 sec", 45_000L to "45 sec", 60_000L to "60 sec").forEach { (lengthMs, label) ->
+                        FilterChip(
+                            selected = targetClipDurationMs == lengthMs,
+                            onClick = { targetClipDurationMs = lengthMs },
+                            label = { Text(label, fontSize = 10.sp) },
+                            enabled = !analyzing
+                        )
+                    }
+                }
+                Text("AI searches for moments around this length and keeps speech boundaries inside the selected range.", color = Muted, fontSize = 11.sp)
                 Button(onClick = {
                     val src = video ?: return@Button
                     scope.launch {
@@ -668,7 +681,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             })
                             transcriptSegments = transcript
                             message = "Finding strong moments…"
-                            val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration) }
+                            val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration, targetClipDurationMs) }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
                                 val id = existingProjectId ?: projectDb.saveProject(
