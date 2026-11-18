@@ -24,7 +24,8 @@ object AudioPcmExtractor {
     suspend fun decodeToMono16Khz(
         context: Context,
         uri: Uri,
-        outputFile: File
+        outputFile: File,
+        onEnergyWindow: (AudioEnergyWindow) -> Unit = {}
     ): Long = withContext(Dispatchers.IO) {
         val extractor = MediaExtractor()
         var decoder: MediaCodec? = null
@@ -67,6 +68,11 @@ object AudioPcmExtractor {
             var sourceFramesSeen = 0L
             var outputSamplesWritten = 0L
             val info = MediaCodec.BufferInfo()
+            var energySamples = 0
+            var energySquares = 0.0
+            var energyPeak = 0f
+            var energyWindowIndex = 0L
+            val pendingEnergy = mutableListOf<AudioEnergyWindow>()
 
             DataOutputStream(BufferedOutputStream(FileOutputStream(outputFile))).use { pcmOut ->
                 while (!outputDone) {
@@ -147,7 +153,22 @@ object AudioPcmExtractor {
                                         val targetSourceFrame =
                                             outputSamplesWritten.toDouble() * outputSampleRate / 16000.0
                                         pcmOut.writeFloat(mono)
+                                        energySquares += mono.toDouble() * mono.toDouble()
+                                        energyPeak = maxOf(energyPeak, kotlin.math.abs(mono))
+                                        energySamples++
                                         outputSamplesWritten++
+                                        if (energySamples == 16_000) {
+                                            pendingEnergy += AudioEnergyWindow(
+                                                startMs = energyWindowIndex * 1_000L,
+                                                endMs = (energyWindowIndex + 1L) * 1_000L,
+                                                rms = kotlin.math.sqrt(energySquares / energySamples).toFloat(),
+                                                peak = energyPeak
+                                            )
+                                            energyWindowIndex++
+                                            energySamples = 0
+                                            energySquares = 0.0
+                                            energyPeak = 0f
+                                        }
                                     }
                                 }
                                 sourceFramesSeen += frames
@@ -161,7 +182,18 @@ object AudioPcmExtractor {
                 }
             }
 
+            if (energySamples > 0) {
+                pendingEnergy += AudioEnergyWindow(
+                    startMs = energyWindowIndex * 1_000L,
+                    endMs = energyWindowIndex * 1_000L + energySamples * 1_000L / 16_000L,
+                    rms = kotlin.math.sqrt(energySquares / energySamples).toFloat(),
+                    peak = energyPeak
+                )
+            }
             check(outputSamplesWritten > 0L) { "No decodable audio samples were found." }
+            // Publish only after the native decode fully succeeds. If it fails,
+            // FFmpeg replaces the PCM and transcript-only scoring is safer.
+            pendingEnergy.forEach(onEnergyWindow)
             outputSamplesWritten
         } catch (mediaCodecError: Exception) {
             currentCoroutineContext().ensureActive()

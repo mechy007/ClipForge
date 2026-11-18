@@ -16,6 +16,11 @@ import java.io.File
  * to Whisper in bounded 30-second chunks. The native model context is loaded
  * once per video and reused across chunks to avoid repeatedly loading 78 MB.
  */
+data class TranscriptionResult(
+    val segments: List<TranscriptSegment>,
+    val audioEnergy: List<AudioEnergyWindow>
+)
+
 object VideoTranscriber {
     private const val CHUNK_SECONDS = 30
     private const val SAMPLE_RATE = 16_000
@@ -26,14 +31,24 @@ object VideoTranscriber {
         videoUri: Uri,
         language: String? = null,
         onStatus: (String) -> Unit = {}
-    ): List<TranscriptSegment> = withContext(Dispatchers.IO) {
+    ): List<TranscriptSegment> = transcribeWithSignals(context, videoUri, language, onStatus).segments
+
+    suspend fun transcribeWithSignals(
+        context: Context,
+        videoUri: Uri,
+        language: String? = null,
+        onStatus: (String) -> Unit = {}
+    ): TranscriptionResult = withContext(Dispatchers.IO) {
         val pcmFile = File(context.cacheDir, "clipforge-audio-" + System.nanoTime() + ".pcm")
         var whisperSessionStarted = false
         try {
             onStatus("Preparing the bundled offline speech model…")
             WhisperModelManager.ensureModel(context) { _, _ -> }
             onStatus("Decoding video audio on this device…")
-            AudioPcmExtractor.decodeToMono16Khz(context, videoUri, pcmFile)
+            val audioEnergy = mutableListOf<AudioEnergyWindow>()
+            AudioPcmExtractor.decodeToMono16Khz(context, videoUri, pcmFile) { window ->
+                audioEnergy += window
+            }
 
             whisperSessionStarted = true
             WhisperEngine.beginSession(context)
@@ -71,7 +86,10 @@ object VideoTranscriber {
                 }
             }
 
-            transcript.sortedBy { it.startMs }
+            TranscriptionResult(
+                segments = transcript.sortedBy { it.startMs },
+                audioEnergy = audioEnergy
+            )
         } finally {
             if (whisperSessionStarted) WhisperEngine.endSession()
             pcmFile.delete()
