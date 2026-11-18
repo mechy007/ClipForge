@@ -57,7 +57,7 @@ object PassiveClipInsights {
         }
 
         val sentence = text.split(Regex("(?<=[.!?])\\s+")).firstOrNull().orEmpty()
-            .trim().trim('"', '\\'')
+            .trim().trim('"', '\'')
         val title = sentence.take(64).ifBlank { "$category highlight" }
 
         var latestCoveredEnd = Long.MIN_VALUE
