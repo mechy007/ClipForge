@@ -136,7 +136,7 @@ fun YouTubeLivePanel(
                         }
                     }
                 },
-                enabled = videoInput.isNotBlank() && apiKey.isNotBlank(),
+                enabled = monitorJob?.isActive == true || (videoInput.isNotBlank() && apiKey.isNotBlank()),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (monitorJob?.isActive == true) "Stop monitoring" else "Connect and monitor")
