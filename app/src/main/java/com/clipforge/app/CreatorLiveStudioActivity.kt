@@ -39,7 +39,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.pedro.common.ConnectChecker
 import com.pedro.library.rtmp.RtmpStream
-import com.pedro.library.view.AspectRatioMode
+import com.pedro.encoder.utils.gl.AspectRatioMode
 import com.pedro.library.view.OpenGlView
 import java.io.File
 import java.text.SimpleDateFormat
@@ -52,6 +52,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
     private var status by mutableStateOf("Connect your own YouTube encoder feed. Keep this screen open while live.")
     private var bitrate by mutableLongStateOf(0L)
     private var recordingPath by mutableStateOf<String?>(null)
+    private var liveActive by mutableStateOf(false)
     private var permissionDenied by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
@@ -79,6 +80,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
                     status = status,
                     bitrate = bitrate,
                     recordingPath = recordingPath,
+                    liveActive = liveActive,
                     permissionDenied = permissionDenied,
                     onRequestPermissions = ::requestCapturePermissions,
                     onStart = ::startLiveAndRecord,
@@ -158,14 +160,22 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
         val file = File(directory, "ClipForge_Live_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4")
         val endpoint = "$base/$key"
         try {
-            stream.startRecord(file.absolutePath)
+            stream.startRecord(file.absolutePath) { recordStatus ->
+                runOnUiThread {
+                    if (recordStatus == com.pedro.library.base.recording.RecordController.Status.RECORDING) {
+                        status = "Local MP4 recording is active."
+                    }
+                }
+            }
             recordingPath = file.absolutePath
+            liveActive = true
             stream.startStream(endpoint)
             status = "Starting secure YouTube stream · local MP4 recording is active."
         } catch (error: Exception) {
             if (stream.isStreaming) stream.stopStream()
             if (stream.isRecording) stream.stopRecord()
             recordingPath = if (file.exists() && file.length() > 0L) file.absolutePath else null
+            liveActive = false
             status = error.localizedMessage ?: "Could not start the live session."
         }
     }
@@ -178,6 +188,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
             status = it.localizedMessage ?: "Could not stop the live session cleanly."
             return
         }
+        liveActive = false
         status = recordingPath?.let { "Live session stopped. Local recording saved." } ?: "Live session stopped."
     }
 
@@ -238,6 +249,7 @@ private fun CreatorLiveStudioScreen(
     status: String,
     bitrate: Long,
     recordingPath: String?,
+    liveActive: Boolean,
     permissionDenied: Boolean,
     onRequestPermissions: () -> Unit,
     onStart: (String, String) -> Unit,
@@ -248,7 +260,6 @@ private fun CreatorLiveStudioScreen(
     val context = LocalContext.current
     var serverUrl by androidx.compose.runtime.remember { mutableStateOf("rtmps://a.rtmps.youtube.com:443/live2") }
     var streamKey by androidx.compose.runtime.remember { mutableStateOf("") }
-    val active = recordingPath != null
     Surface(Modifier.fillMaxSize(), color = Color(0xFF0B0B10)) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
@@ -288,12 +299,12 @@ private fun CreatorLiveStudioScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = { onStart(serverUrl, streamKey) },
-                    enabled = prepared && streamKey.isNotBlank() && recordingPath == null,
+                    enabled = prepared && streamKey.isNotBlank() && !liveActive,
                     modifier = Modifier.weight(1f)
                 ) { Text("Go live + record") }
                 Button(
                     onClick = onStop,
-                    enabled = active,
+                    enabled = liveActive,
                     modifier = Modifier.weight(1f)
                 ) { Text("Stop") }
             }
