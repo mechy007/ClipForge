@@ -13,7 +13,7 @@ object YouTubeLinkClassifier {
         val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return false
         if (!uri.scheme.equals("https", true) && !uri.scheme.equals("http", true)) return false
         if (uri.userInfo != null) return false
-        return uri.host?.lowercase() in allowedHosts
+        return uri.host?.lowercase()?.let { it in allowedHosts } == true
     }
 
     fun importGuidance(): String =
