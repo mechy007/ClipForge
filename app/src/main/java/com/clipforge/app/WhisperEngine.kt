@@ -12,19 +12,33 @@ data class TranscriptSegment(
 
 /**
  * Thin Kotlin boundary around the pinned whisper.cpp JNI runtime.
- * Input must be mono 16 kHz float PCM normalized to [-1, 1].
+ * A transcription session loads the model once and reuses its native context
+ * for every bounded audio chunk, then releases it when the session ends.
  */
 object WhisperEngine {
     init {
         System.loadLibrary("clipforge_whisper")
     }
 
+    private external fun loadModel(modelPath: String): Boolean
     private external fun transcribe(
-        modelPath: String,
         audioSamples: FloatArray,
         threadCount: Int,
         language: String?
     ): Array<String>?
+    private external fun releaseModel()
+
+    suspend fun beginSession(context: Context) = withContext(Dispatchers.Default) {
+        val model = WhisperModelManager.modelFile(context)
+        require(model.isFile) { "The bundled offline AI model is not installed." }
+        check(loadModel(model.absolutePath)) {
+            "Whisper could not load the bundled offline AI model."
+        }
+    }
+
+    suspend fun endSession() = withContext(Dispatchers.Default) {
+        releaseModel()
+    }
 
     suspend fun transcribe16Khz(
         context: Context,
@@ -33,10 +47,10 @@ object WhisperEngine {
     ): List<TranscriptSegment> = withContext(Dispatchers.Default) {
         require(audioSamples.isNotEmpty()) { "Audio is empty." }
         val model = WhisperModelManager.modelFile(context)
-        require(model.isFile) { "Download the offline AI model first." }
+        require(model.isFile) { "The bundled offline AI model is not installed." }
 
         val threads = (Runtime.getRuntime().availableProcessors() - 1).coerceIn(2, 4)
-        val rows = transcribe(model.absolutePath, audioSamples, threads, language)
+        val rows = transcribe(audioSamples, threads, language)
             ?: error("Whisper could not transcribe this audio.")
 
         rows.mapNotNull { row ->
