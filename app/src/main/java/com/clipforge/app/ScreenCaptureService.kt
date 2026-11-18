@@ -114,14 +114,13 @@ class ScreenCaptureService : Service(), ConnectChecker {
             )
             recordingPath = file.absolutePath
             val liveSessionId = intent?.getLongExtra(EXTRA_LIVE_SESSION_ID, -1L) ?: -1L
-            if (liveSessionId > 0L) {
-                ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, System.currentTimeMillis())
-            }
+            val recordingStartMs = System.currentTimeMillis()
             liveStream.startRecord(file.absolutePath) { status ->
                 if (status == RecordController.Status.RECORDING) {
                     updateActiveNotification("Screen recording active · connecting to RTMPS.")
                 }
             }
+            if (liveSessionId > 0L) ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, recordingStartMs)
             liveStream.startStream(endpoint)
             updateActiveNotification("Screen capture started · streaming and recording locally.")
         } catch (_: Exception) {
