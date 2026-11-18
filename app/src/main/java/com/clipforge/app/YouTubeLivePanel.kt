@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -68,10 +69,11 @@ fun YouTubeLivePanel(
                 onValueChange = { apiKey = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("YouTube Data API key") },
-                singleLine = true
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation()
             )
             Text(
-                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge.",
+                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Select your own original recording in Video Studio; its timeline should begin with the broadcast."
                 color = Color(0xFF9A9AA9),
                 style = MaterialTheme.typography.bodySmall
             )
