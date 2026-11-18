@@ -161,6 +161,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var faceTrackingPath by remember { mutableStateOf<List<CropFocus>>(emptyList()) }
 
     LaunchedEffect(video) {
+        editorStartMs = 0L
+        editorEndMs = 0L
+    }
+
+    LaunchedEffect(video) {
         val selected = video
         if (selected == null) {
             videoDisplayName = ""
