@@ -237,6 +237,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             val cues = if (burnCaptions) CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs) else emptyList()
             ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
                 aspectRatio = exportAspectRatio,
+                faceTrackingPath = faceTrackingPath,
                 captionCues = cues,
                 captionPreset = runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
                 onStatus = { exportMessage = it },
@@ -257,6 +258,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             BatchExportCoordinator.start(
                 context, treeUri, source, chosen, exportAspectRatio,
                 if (burnCaptions) transcriptSegments else emptyList(),
+                faceTrackingPath = faceTrackingPath,
                 runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN)
             )
         }
@@ -455,7 +457,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             modifier = Modifier.fillMaxWidth()
                         ) { Text(if (faceTrackingBusy) "Detecting faces…" else "Analyze face tracking") }
                         Text(faceTrackingMessage, color = Muted, fontSize = 11.sp)
-                        Text("Preview analysis only: face tracking is not yet applied to exported framing.", color = Muted, fontSize = 10.sp)
+                        Text(
+                            if (faceTrackingPath.isEmpty()) "No face path is active. Export uses a centered crop unless faces are detected."
+                            else "Face-aware framing is active for exports and follows the detected subject.",
+                            color = Muted, fontSize = 10.sp
+                        )
                         VideoPreview(
                             uri = video!!,
                             onDuration = { if (it > 0L) { duration = it; previewError = null } },
@@ -734,9 +740,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             })
                             val transcript = analysis.segments
                             transcriptSegments = transcript
-                            message = "Ranking speech and audio activity…"
+                            message = "Detecting scene changes…"
+                            val sceneCuts = SceneChangeAnalyzer.analyze(context, src, duration)
+                            message = "Ranking speech, silence and scene changes…"
                             val found = withContext(Dispatchers.Default) {
-                                HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy)
+                                HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts)
                             }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {

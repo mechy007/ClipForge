@@ -33,7 +33,8 @@ object BatchExportCoordinator {
         context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>,
         aspectRatio: Float = 9f / 16f,
         transcript: List<TranscriptSegment> = emptyList(),
-        captionPreset: CaptionPreset = CaptionPreset.CLEAN
+        captionPreset: CaptionPreset = CaptionPreset.CLEAN,
+        faceTrackingPath: List<CropFocus> = emptyList()
     ) {
         val previous = mutableStatus.value
         if (previous.running) return
@@ -67,7 +68,7 @@ object BatchExportCoordinator {
         val appContext = context.applicationContext
         scope.launch {
             try {
-                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset) { done, _, clip ->
+                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset, faceTrackingPath) { done, _, clip ->
                     val verifiedClips = alreadyCompleted + remaining.take(done)
                     mutableStatus.value = BatchExportStatus(
                         running = true,
