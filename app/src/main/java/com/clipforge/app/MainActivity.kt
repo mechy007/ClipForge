@@ -396,12 +396,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             if (activeSection == "Studio") {
             OutlinedTextField(value = linkText, onValueChange = { linkText = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Direct video file URL (MP4/WebM/MOV/MKV)") }, singleLine = true)
-            Text("YouTube links are recognised and sent to Live for chat markers. To edit a regular video, import a permitted video file from your phone.", color = Muted, fontSize = 10.sp)
+            Text("YouTube watch links cannot be imported as video files here. Import a video file you own or are authorised to use. Live chat tools are separate.", color = Muted, fontSize = 10.sp)
             OutlinedButton(onClick = {
                 scope.launch {
                     if (YouTubeLinkClassifier.isYouTubeUrl(linkText)) {
-                        pendingYoutubeUrl = linkText.trim()
-                        activeSection = "Live"
                         linkStatus = YouTubeLinkClassifier.importGuidance()
                         return@launch
                     }
