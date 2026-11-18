@@ -53,3 +53,6 @@ The Whisper model is fetched and SHA-256-verified during the APK build, packaged
 
 ## Licensing
 ClipForge application code is MIT licensed. See THIRD_PARTY_NOTICES.md for dependency and model notices.
+
+
+- Existing offline Whisper uses bundled whisper.cpp. Android FFmpeg fallback now handles audio that MediaCodec cannot decode and feeds the same Whisper PCM pipeline. See `docs/ANDROID_FFMPEG_INTEGRATION.md` for compatibility and licensing details.
