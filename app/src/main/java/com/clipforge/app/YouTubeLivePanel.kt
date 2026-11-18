@@ -122,7 +122,7 @@ fun YouTubeLivePanel(
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Record this livestream on this phone") }
             Text(
-                "ClipForge will ask for Android screen-sharing permission, start a local MP4 recording, then open this livestream. Use the notification to stop and save the recording. Only record content you are authorised to capture.",
+                "After Android screen-sharing permission, the recording notification provides Open livestream and Stop controls. Tap Open livestream only after recording is active. Only record content you are authorised to capture.",
                 color = ClipForgePalette.Muted,
                 style = MaterialTheme.typography.bodySmall
             )

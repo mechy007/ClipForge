@@ -21,7 +21,7 @@ For the first release, the video source must be the creator's own original recor
 
 ## User-authorised Android screen recording
 
-ClipForge also offers a user-initiated, local-only Android screen-recording mode for a livestream that is playing in another app or browser. The user starts the capture from ClipForge, approves Android's MediaProjection consent prompt, switches to the livestream app, and stops capture from the persistent notification. The existing screen-capture service records a local MP4 and can associate its start time with the active live-chat session.
+ClipForge also offers a user-initiated, local-only Android screen-recording mode for a livestream that is playing in another app or browser. The user starts the capture from ClipForge, approves Android's MediaProjection consent prompt, then uses the persistent recording notification's Open livestream action. This action is available after recording has started, avoiding a race between screen-capture startup and playback. The user stops capture from the same notification. The existing screen-capture service records a local MP4 and can associate its start time with the active live-chat session.
 
 This mode does not extract a YouTube playback URL, download from YouTube servers, bypass DRM, or remove app/platform capture restrictions. Android may show protected content as a black frame, and internal audio is available only when the source app permits playback capture. Users must have the rights and permissions required to record and republish the content. This is a user-controlled screen recording, not a platform-level YouTube recording API.
 
