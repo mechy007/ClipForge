@@ -169,6 +169,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         editorStartMs = 0L
         editorEndMs = 0L
         previewingClip = null
+        faceTrackingPath = emptyList()
+        faceTrackingMessage = "Face tracking analyzes sampled frames on-device."
     }
 
     LaunchedEffect(video) {
@@ -411,6 +413,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         onStartChange = { editorStartMs = it },
                         onEndChange = { editorEndMs = it },
                         onAspectRatioChange = { ratio ->
+                            if (exportAspectRatio != ratio) {
+                                faceTrackingPath = emptyList()
+                                faceTrackingMessage = "Output ratio changed. Re-analyze faces before exporting for accurate framing."
+                            }
                             exportAspectRatio = ratio
                             exportAspectLabel = when (ratio) {
                                 1f -> "1:1 Square"
@@ -485,6 +491,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                             enabled = !batchExporting,
                                             role = Role.RadioButton
                                         ) {
+                                            if (exportAspectRatio != ratio) {
+                                                faceTrackingPath = emptyList()
+                                                faceTrackingMessage = "Output ratio changed. Re-analyze faces before exporting for accurate framing."
+                                            }
                                             exportAspectRatio = ratio
                                             exportAspectLabel = when (label) {
                                                 "9:16" -> "9:16 Shorts"
