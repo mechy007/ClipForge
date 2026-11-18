@@ -69,7 +69,7 @@ fun YouTubeLivePanel(
     LaunchedEffect(initialVideoUrl) {
         if (initialVideoUrl.isNotBlank() && monitorJob?.isActive != true) {
             videoInput = initialVideoUrl
-            status = "YouTube link recognised. Add your API key to monitor a live broadcast; ordinary videos must be imported as local files."
+            status = YouTubeLinkClassifier.importGuidance()
         }
     }
 
