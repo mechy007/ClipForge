@@ -93,6 +93,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var message by remember { mutableStateOf(if (initialVideoUri == null) "Import a video to discover its best moments." else "Your creator live recording is ready. Run AI highlight detection.") }
     var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
     var liveMarkers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
+    var activeLiveSessionId by remember { mutableStateOf<Long?>(null) }
     var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
     var pendingCaptionCues by remember { mutableStateOf<List<CaptionCue>?>(null) }
     var editing by remember { mutableStateOf<ClipCandidate?>(null) }
@@ -197,7 +198,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
 
             Button(
                 onClick = {
-                    val liveSessionId = projectDb.listLiveSessions().firstOrNull()?.id ?: -1L
+                    val liveSessionId = activeLiveSessionId ?: -1L
                     context.startActivity(android.content.Intent(context, ScreenCaptureSetupActivity::class.java).putExtra(MainActivity.EXTRA_LIVE_SESSION_ID, liveSessionId))
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -211,7 +212,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             ) { Text("Open Creator Live Studio · Camera + local recording") }
             YouTubeLivePanel(
                 database = projectDb,
-                onMonitoringStarted = { liveMarkers = emptyList() },
+                onMonitoringStarted = { liveMarkers = emptyList(); activeLiveSessionId = null },
+                onActiveSessionChanged = { activeLiveSessionId = it },
                 onMarker = { marker ->
                     liveMarkers = (liveMarkers + marker).distinctBy { it.startMs }.sortedBy { it.startMs }.takeLast(100)
                 },
