@@ -19,6 +19,17 @@ class FaceTrackingPlannerTest {
         assertTrue(path.last().centerX > path.first().centerX)
     }
 
+    @Test fun cropDimensionsRespectLandscapeSourceAspect() {
+        val observations = listOf(
+            FaceObservation(0L, NormalizedFace(0.4f, 0.2f, 0.6f, 0.5f))
+        )
+        val focus = FaceTrackingPlanner.plan(
+            observations, targetAspectRatio = 9f / 16f, sourceAspectRatio = 16f / 9f
+        ).single()
+        assertEquals(0.31640625f, focus.width, 0.0001f)
+        assertEquals(1f, focus.height, 0.0001f)
+    }
+
     @Test fun lowConfidenceFacesAreIgnored() {
         val path = FaceTrackingPlanner.plan(listOf(
             FaceObservation(0, NormalizedFace(.2f, .2f, .4f, .5f, .1f))

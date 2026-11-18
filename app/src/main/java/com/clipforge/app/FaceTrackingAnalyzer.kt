@@ -33,6 +33,11 @@ object FaceTrackingAnalyzer {
         try {
             retriever.setDataSource(context, source)
             val duration = (endMs - startMs).coerceAtLeast(1L)
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toFloatOrNull() ?: 1f
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toFloatOrNull() ?: 1f
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            val rawAspect = (width / height.coerceAtLeast(1f)).coerceIn(0.25f, 4f)
+            val sourceAspect = if (rotation == 90 || rotation == 270) 1f / rawAspect else rawAspect
             val step = maxOf(1_500L, duration / 120L)
             var offset = 0L
             while (offset < duration) {
@@ -73,6 +78,6 @@ object FaceTrackingAnalyzer {
             retriever.release()
             detector.close()
         }
-        FaceTrackingPlanner.plan(observations, targetAspectRatio)
+        FaceTrackingPlanner.plan(observations, targetAspectRatio, sourceAspectRatio = sourceAspect)
     }
 }

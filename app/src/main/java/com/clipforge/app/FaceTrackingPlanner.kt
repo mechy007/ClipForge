@@ -28,17 +28,27 @@ object FaceTrackingPlanner {
         observations: List<FaceObservation>,
         targetAspectRatio: Float = 9f / 16f,
         smoothing: Float = 0.28f,
-        minimumConfidence: Float = 0.45f
+        minimumConfidence: Float = 0.45f,
+        sourceAspectRatio: Float = 1f
     ): List<CropFocus> {
         require(targetAspectRatio in 0.25f..4f)
+        require(sourceAspectRatio in 0.25f..4f)
         require(smoothing in 0.01f..1f)
         val valid = observations.filter { it.timeMs >= 0L && it.face.confidence >= minimumConfidence }
             .sortedBy { it.timeMs }
         if (valid.isEmpty()) return emptyList()
 
-        // Keep a portrait crop wide enough for a face and some headroom.
-        val cropWidth = if (targetAspectRatio < 1f) targetAspectRatio else 1f
-        val cropHeight = cropWidth / targetAspectRatio
+        // Compute the crop in normalized source coordinates while preserving
+        // the requested output ratio for both landscape and portrait sources.
+        val cropWidth: Float
+        val cropHeight: Float
+        if (targetAspectRatio <= sourceAspectRatio) {
+            cropHeight = 1f
+            cropWidth = targetAspectRatio / sourceAspectRatio
+        } else {
+            cropWidth = 1f
+            cropHeight = sourceAspectRatio / targetAspectRatio
+        }
         var x = valid.first().face.centerX
         var y = (valid.first().face.centerY - 0.08f).coerceIn(0f, 1f)
         return valid.map { observation ->
