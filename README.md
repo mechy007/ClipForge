@@ -11,7 +11,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Transcribe audio in bounded 30-second chunks and retain timestamped transcript segments.
 - Detect candidate 30-second highlights using offline transcript signals (speech density, hook words, punctuation and vocabulary variety).
 - Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
-- Export each selected or edited clip as MP4 using Media3 Transformer.
+- Export each selected or edited clip as a vertical 9:16 MP4 using Media3 Transformer (center crop; face-aware tracking is a later milestone).
 - Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
 - Keep selected video, decoded audio, transcription and highlight scoring on-device; no AI API or remote video processing backend is used.
 
