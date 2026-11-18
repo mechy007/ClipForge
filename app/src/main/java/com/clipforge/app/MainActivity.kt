@@ -205,8 +205,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             ) { Text("Screen / Game Capture · RTMPS + internal audio") }
             Button(
                 onClick = {
-                    val liveSessionId = projectDb.listLiveSessions().firstOrNull()?.id ?: -1L
-                    context.startActivity(android.content.Intent(context, CreatorLiveStudioActivity::class.java).putExtra(EXTRA_LIVE_SESSION_ID, liveSessionId))
+                    val liveSessionId = activeLiveSessionId ?: -1L
+                    context.startActivity(android.content.Intent(context, CreatorLiveStudioActivity::class.java).putExtra(MainActivity.EXTRA_LIVE_SESSION_ID, liveSessionId))
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Open Creator Live Studio · Camera + local recording") }
