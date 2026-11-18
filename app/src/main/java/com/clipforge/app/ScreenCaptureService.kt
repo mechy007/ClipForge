@@ -120,7 +120,7 @@ class ScreenCaptureService : Service(), ConnectChecker {
                     updateActiveNotification("Screen recording active · connecting to RTMPS.")
                 }
             }
-            if (liveSessionId > 0L) runCatching { ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, recordingStartMs) }
+            if (liveSessionId > 0L) runCatching { ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, recordingStartMs, file.absolutePath) }
             liveStream.startStream(endpoint)
             updateActiveNotification("Screen capture started · streaming and recording locally.")
         } catch (_: Exception) {
