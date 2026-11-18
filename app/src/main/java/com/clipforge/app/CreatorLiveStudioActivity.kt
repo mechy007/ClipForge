@@ -172,7 +172,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
             }
             recordingPath = file.absolutePath
             val liveSessionId = intent.getLongExtra(MainActivity.EXTRA_LIVE_SESSION_ID, -1L)
-            if (liveSessionId > 0L) ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, recordingStartMs)
+            if (liveSessionId > 0L) runCatching { ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, recordingStartMs) }
             liveActive = true
             stream.startStream(endpoint)
             status = "Starting secure YouTube stream · local MP4 recording is active."
