@@ -185,7 +185,7 @@ class ScreenCaptureService : Service(), ConnectChecker {
         if (file != null && file.exists() && file.length() > 0L) {
             val openIntent = Intent(this, MainActivity::class.java)
                 .putExtra(MainActivity.EXTRA_LIVE_RECORDING_PATH, file.absolutePath)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             val openPendingIntent = PendingIntent.getActivity(
                 this, NOTIFICATION_ID + 1, openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
