@@ -14,6 +14,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,17 +33,32 @@ import kotlin.coroutines.coroutineContext
 
 @Composable
 fun YouTubeLivePanel(
+    database: ProjectDatabase,
     onMonitoringStarted: () -> Unit,
-    onMarker: (LiveChatHighlightMarker) -> Unit
+    onMarker: (LiveChatHighlightMarker) -> Unit,
+    onMarkersRestored: (List<LiveChatHighlightMarker>) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val api = remember { YouTubeLiveApiClient() }
     var videoInput by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf("Monitor chat activity for your own authorised live content.") }
-    var sessionTitle by remember { mutableStateOf("") }
-    var markers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
+    val restoredSession = remember { database.listLiveSessions().firstOrNull() }
+    val restoredMarkers = remember(restoredSession?.id) {
+        restoredSession?.let { saved ->
+            database.listLiveMarkers(saved.id).map { row ->
+                LiveChatHighlightMarker(row.startMs, row.messageCount, row.baselineMedian, row.reason)
+            }
+        }.orEmpty()
+    }
+    var activeSessionId by remember { mutableStateOf<Long?>(restoredSession?.id) }
+    var status by remember { mutableStateOf(restoredSession?.let { "Restored " + restoredMarkers.size + " saved marker(s) from your last live session." } ?: "Monitor chat activity for your own authorised live content.") }
+    var sessionTitle by remember { mutableStateOf(restoredSession?.title.orEmpty()) }
+    var markers by remember { mutableStateOf(restoredMarkers) }
     var monitorJob by remember { mutableStateOf<Job?>(null) }
+
+    LaunchedEffect(Unit) {
+        if (restoredMarkers.isNotEmpty()) onMarkersRestored(restoredMarkers)
+    }
 
     DisposableEffect(monitorJob) {
         val activeJob = monitorJob
@@ -99,6 +115,7 @@ fun YouTubeLivePanel(
                                 val session = api.resolveLiveSession(videoInput, apiKey)
                                 sessionTitle = session.title
                                 val monitorStartedAtMs = System.currentTimeMillis()
+                                activeSessionId = database.saveLiveSession(session, monitorStartedAtMs)
                                 val startOffsetMs = (monitorStartedAtMs - session.actualStartTimeMs).coerceAtLeast(0L)
                                 val detector = LiveChatSpikeDetector(monitorStartOffsetMs = startOffsetMs)
                                 val seenIds = LinkedHashSet<String>()
@@ -127,7 +144,10 @@ fun YouTubeLivePanel(
                                     val newMarkers = detector.completeBucketsThrough(elapsedMs - latenessWindowMs)
                                     if (newMarkers.isNotEmpty()) {
                                         markers = (markers + newMarkers).takeLast(100)
-                                        newMarkers.forEach(onMarker)
+                                        newMarkers.forEach { marker ->
+                                            activeSessionId?.let { database.saveLiveMarker(it, marker) }
+                                            onMarker(marker)
+                                        }
                                         status = "Found ${markers.size} live highlight marker(s)."
                                     }
                                     pageToken = page.nextPageToken
