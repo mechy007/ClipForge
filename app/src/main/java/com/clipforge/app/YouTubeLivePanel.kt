@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun YouTubeLivePanel(
+    onMonitoringStarted: () -> Unit,
     onMarker: (LiveChatHighlightMarker) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -73,7 +74,7 @@ fun YouTubeLivePanel(
                 visualTransformation = PasswordVisualTransformation()
             )
             Text(
-                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Select your own original recording in Video Studio; its timeline should begin with the broadcast."
+                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Select your own original recording in Video Studio; its timeline should begin with the broadcast.",
                 color = Color(0xFF9A9AA9),
                 style = MaterialTheme.typography.bodySmall
             )
@@ -84,6 +85,7 @@ fun YouTubeLivePanel(
                         monitorJob = null
                         status = "Monitoring stopped. Existing markers are kept on this screen."
                     } else {
+                        onMonitoringStarted()
                         markers = emptyList()
                         status = "Connecting to YouTube Live…"
                         monitorJob = scope.launch {
