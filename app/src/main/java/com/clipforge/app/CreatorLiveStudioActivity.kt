@@ -212,7 +212,12 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
     }
 
     override fun onConnectionFailed(reason: String) {
-        runOnUiThread { status = "Stream connection failed: $reason · local recording remains active until you stop it." }
+        val retrying = runCatching { stream.getStreamClient().reTry(5_000, reason, null) }.getOrDefault(false)
+        runOnUiThread {
+            status = if (retrying) "Stream interrupted · retrying in 5 seconds. Local recording continues."
+            else "Stream connection failed: $reason · local recording remains active until you stop it."
+        }
+        if (!retrying) runOnUiThread { if (stream.isStreaming) stream.stopStream() }
     }
 
     override fun onDisconnect() {
@@ -310,7 +315,7 @@ private fun CreatorLiveStudioScreen(
             }
             Text(status, color = Color(0xFFD6D6E0), style = MaterialTheme.typography.bodySmall)
             if (bitrate > 0L) Text("Upload bitrate: " + String.format(Locale.US, "%.2f Mbps", bitrate / 1_000_000.0), color = Color(0xFF75D6A2))
-            if (recordingPath != null) {
+            if (recordingPath != null && !liveActive) {
                 Button(onClick = onOpenRecording, modifier = Modifier.fillMaxWidth()) { Text("Open local recording in ClipForge") }
             }
             Text("Keep ClipForge open during the stream. Background streaming and screen/game capture are not part of this first camera-based studio build.", color = Color(0xFF9A9AA9), style = MaterialTheme.typography.bodySmall)
