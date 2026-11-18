@@ -15,3 +15,11 @@ Model source: https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tin
 The model is fetched and verified during the APK build, bundled in the APK as an uncompressed asset, and copied to app-private storage on first launch. The app does not download the model at runtime. The app verifies the expected byte length and SHA-256 before accepting the file.
 
 Whisper.cpp source: https://github.com/ggml-org/whisper.cpp/tree/v1.9.5
+
+## Reference repositories
+
+The following MIT-licensed projects were reviewed as engineering references. ClipForge reimplements selected ideas in Kotlin; it does not bundle their Python applications, desktop dependencies, models or assets. See docs/REFERENCE_INTEGRATION.md for the adaptation record and upstream license links.
+
+- AI-Youtube-Shorts-Generator — https://github.com/Anil-matcha/AI-Youtube-Shorts-Generator — MIT; copyright Anil Chandra Naidu Matcha.
+- AutoClip — https://github.com/artbyjazi/autoclip — MIT; copyright Jad Ghazi.
+- FunClip — https://github.com/modelscope/FunClip — MIT; copyright Alibaba.
