@@ -731,7 +731,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("PRIVATE · ON-DEVICE WORKFLOW", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
-                Text("v0.6.1", color = Muted, fontSize = 10.sp)
+                Text("v0.6.2", color = Muted, fontSize = 10.sp)
             }
         }
     }
