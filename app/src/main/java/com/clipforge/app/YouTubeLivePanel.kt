@@ -24,10 +24,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlin.coroutines.coroutineContext
 
 @Composable
 fun YouTubeLivePanel(
@@ -102,6 +103,7 @@ fun YouTubeLivePanel(
                                 val seenIds = LinkedHashSet<String>()
                                 var pageToken: String? = null
                                 status = "Monitoring chat: ${session.title}"
+                                val ownJob = coroutineContext[Job]
                                 while (isActive) {
                                     val page = api.getChatPage(session, apiKey, pageToken)
                                     page.messages.forEach { chatMessage ->
@@ -118,8 +120,11 @@ fun YouTubeLivePanel(
                                             }
                                         }
                                     }
+                                    // Keep a grace window for messages that arrive in a later API poll.
+                                    // Late messages older than the finalized watermark are counted by the detector.
                                     val elapsedMs = System.currentTimeMillis() - session.actualStartTimeMs
-                                    val newMarkers = detector.completeBucketsThrough(elapsedMs)
+                                    val latenessWindowMs = maxOf(15_000L, page.pollingIntervalMs * 3L)
+                                    val newMarkers = detector.completeBucketsThrough(elapsedMs - latenessWindowMs)
                                     if (newMarkers.isNotEmpty()) {
                                         markers = (markers + newMarkers).takeLast(100)
                                         newMarkers.forEach(onMarker)
@@ -137,7 +142,7 @@ fun YouTubeLivePanel(
                             } catch (error: Exception) {
                                 status = error.localizedMessage ?: "Could not monitor this live chat."
                             } finally {
-                                monitorJob = null
+                                if (monitorJob === ownJob) monitorJob = null
                             }
                         }
                     }
