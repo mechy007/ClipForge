@@ -3,7 +3,6 @@ package com.clipforge.app
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -83,13 +82,6 @@ private fun ScreenCaptureSetupScreen() {
             }
             try {
                 ContextCompat.startForegroundService(context, serviceIntent)
-                if (sourceUrl.isNotBlank() && YouTubeLinkClassifier.isYouTubeUrl(sourceUrl)) {
-                    runCatching {
-                        activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(sourceUrl)))
-                    }.onFailure {
-                        status = "Recording started. Open YouTube manually and play the livestream."
-                    }
-                }
                 activity.finish()
             } catch (_: Exception) {
                 status = "ClipForge could not start screen capture. Check notification permission and try again."
@@ -161,7 +153,7 @@ private fun ScreenCaptureSetupScreen() {
             if (liveSessionId > 0L) Text("Linked to your latest YouTube Live chat session · markers will align to this recording.", color = Color(0xFF75D6A2), style = MaterialTheme.typography.bodySmall)
             Text(
                 if (localOnly) {
-                    if (sourceUrl.isNotBlank()) "After you grant screen access, ClipForge starts recording and opens the livestream. Keep playback in the foreground. Supported internal audio is included; microphone commentary is not recorded."
+                    if (sourceUrl.isNotBlank()) "After you grant screen access, wait for the ClipForge recording notification, then tap Open livestream. Keep playback in the foreground. Supported internal audio is included; microphone commentary is not recorded."
                     else "ClipForge records the screen and supported internal playback audio to a local MP4. Start this capture, switch to the livestream app or browser, and play the stream. Microphone commentary is not recorded."
                 } else {
                     "ClipForge captures the Android screen and supported internal game/media audio, sends it over RTMPS, and records a local MP4 at the same time. It does not record microphone commentary in this mode."

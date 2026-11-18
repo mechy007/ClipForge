@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
@@ -42,6 +43,7 @@ class ScreenCaptureService : Service(), ConnectChecker {
     private var stream: RtmpStream? = null
     private var projection: MediaProjection? = null
     private var recordingPath: String? = null
+    private var sourceUrl: String? = null
     @Volatile private var finishing = false
     @Volatile private var failureReason: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -79,6 +81,8 @@ class ScreenCaptureService : Service(), ConnectChecker {
             require(resultCode == Activity.RESULT_OK) { "Screen-capture permission was not granted." }
             val endpoint = intent?.getStringExtra(EXTRA_RTMP_ENDPOINT).orEmpty()
             val localOnly = intent?.getBooleanExtra(EXTRA_LOCAL_ONLY, false) == true
+            sourceUrl = intent?.getStringExtra(EXTRA_SOURCE_URL)
+                ?.takeIf { YouTubeLinkClassifier.isYouTubeUrl(it) }
             require(localOnly || endpoint.startsWith("rtmps://", ignoreCase = true)) {
                 "A secure RTMPS endpoint is required for streaming mode."
             }
@@ -169,16 +173,30 @@ class ScreenCaptureService : Service(), ConnectChecker {
         )
     }
 
-    private fun buildActiveNotification(message: String): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildOpenSourcePendingIntent(): PendingIntent? {
+        val url = sourceUrl ?: return null
+        val openIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return PendingIntent.getActivity(
+            this, NOTIFICATION_ID + 2, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun buildActiveNotification(message: String): Notification {
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("ClipForge screen capture")
             .setContentText(message)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(android.R.drawable.ic_media_pause, "Stop capture", buildStopPendingIntent())
-            .build()
+        buildOpenSourcePendingIntent()?.let {
+            builder.addAction(android.R.drawable.ic_media_play, "Open livestream", it)
+        }
+        builder.addAction(android.R.drawable.ic_media_pause, "Stop capture", buildStopPendingIntent())
+        return builder.build()
+    }
 
     private fun updateActiveNotification(message: String) {
         if (!finishing) notificationManager.notify(NOTIFICATION_ID, buildActiveNotification(message))
