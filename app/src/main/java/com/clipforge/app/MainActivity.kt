@@ -45,6 +45,7 @@ private val Muted = Color(0xFF9A9AA9)
 class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_LIVE_RECORDING_PATH = "com.clipforge.app.EXTRA_LIVE_RECORDING_PATH"
+        const val EXTRA_LIVE_SESSION_ID = "com.clipforge.app.EXTRA_LIVE_SESSION_ID"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -196,13 +197,15 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
 
             Button(
                 onClick = {
-                    context.startActivity(android.content.Intent(context, ScreenCaptureSetupActivity::class.java))
+                    val liveSessionId = projectDb.listLiveSessions().firstOrNull()?.id ?: -1L
+                    context.startActivity(android.content.Intent(context, ScreenCaptureSetupActivity::class.java).putExtra(EXTRA_LIVE_SESSION_ID, liveSessionId))
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Screen / Game Capture · RTMPS + internal audio") }
             Button(
                 onClick = {
-                    context.startActivity(android.content.Intent(context, CreatorLiveStudioActivity::class.java))
+                    val liveSessionId = projectDb.listLiveSessions().firstOrNull()?.id ?: -1L
+                    context.startActivity(android.content.Intent(context, CreatorLiveStudioActivity::class.java).putExtra(EXTRA_LIVE_SESSION_ID, liveSessionId))
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Open Creator Live Studio · Camera + local recording") }
@@ -223,13 +226,16 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         if (video == null || duration <= 0L) {
                             message = "Import your authorised original recording before creating clips from live markers."
                         } else {
+                            val recordingOffsetMs = projectDb.listLiveSessions().firstOrNull()?.recordingOffsetMs ?: 0L
                             val candidates = liveMarkers.mapNotNull { marker ->
-                                val clipStart = (marker.startMs - 20_000L).coerceAtLeast(0L)
-                                val clipEnd = minOf(duration, marker.startMs + 10_000L)
+                                val markerTimeMs = LiveMarkerTimeline.toRecordingTime(marker.startMs, recordingOffsetMs)
+                                    ?: return@mapNotNull null
+                                val clipStart = (markerTimeMs - 20_000L).coerceAtLeast(0L)
+                                val clipEnd = minOf(duration, markerTimeMs + 10_000L)
                                 if (clipEnd <= clipStart) null else ClipCandidate(
                                     startMs = clipStart,
                                     endMs = clipEnd,
-                                    title = "Live chat spike · ${time(marker.startMs)}",
+                                    title = "Live chat spike · ${time(markerTimeMs)}",
                                     hook = "${marker.messageCount} chat messages · baseline median ${"%.1f".format(marker.baselineMedian)}",
                                     score = 70
                                 )
@@ -239,7 +245,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             } else {
                                 clips = (clips + candidates).distinctBy { it.startMs to it.endMs }
                                     .sortedByDescending { it.score }
-                                message = "Live markers added. Verify the broadcast-to-recording time alignment before exporting."
+                                message = if (recordingOffsetMs == 0L) "Live markers added. Recording timeline uses the broadcast start; verify alignment before exporting." else "Live markers automatically aligned to the local recording start. Review candidates before exporting."
                             }
                         }
                     },
