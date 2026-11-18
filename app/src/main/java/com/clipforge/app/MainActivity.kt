@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import android.net.Uri
+import android.media.MediaMetadataRetriever
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.OpenableColumns
@@ -125,21 +126,38 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
 
     LaunchedEffect(video) {
         val selected = video
-        videoDisplayName = if (selected == null) "" else withContext(Dispatchers.IO) {
-            val providerName = if (selected.scheme == "content") {
-                runCatching {
-                    context.contentResolver.query(selected, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                        ?.use { cursor ->
-                            if (cursor.moveToFirst()) {
-                                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                                if (index >= 0) cursor.getString(index) else null
-                            } else null
-                        }
-                }.getOrNull()
-            } else null
-            providerName?.takeIf { it.isNotBlank() }
-                ?: selected.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
-                ?: "Selected video"
+        if (selected == null) {
+            videoDisplayName = ""
+            duration = 0L
+        } else {
+            val metadata = withContext(Dispatchers.IO) {
+                val providerName = if (selected.scheme == "content") {
+                    runCatching {
+                        context.contentResolver.query(selected, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                            ?.use { cursor ->
+                                if (cursor.moveToFirst()) {
+                                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                    if (index >= 0) cursor.getString(index) else null
+                                } else null
+                            }
+                    }.getOrNull()
+                } else null
+                val displayName = providerName?.takeIf { it.isNotBlank() }
+                    ?: selected.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                    ?: "Selected video"
+                val mediaDuration = runCatching {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, selected)
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                    } finally {
+                        retriever.release()
+                    }
+                }.getOrDefault(0L)
+                displayName to mediaDuration
+            }
+            videoDisplayName = metadata.first
+            if (metadata.second > 0L) duration = metadata.second
         }
     }
 
