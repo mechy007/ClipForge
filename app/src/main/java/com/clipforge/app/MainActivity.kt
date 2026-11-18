@@ -287,7 +287,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         )
                         if (previewError != null) {
                             Text("Could not preview this video: ${previewError}", color = Color(0xFFFF9A9A), fontSize = 11.sp)
-                            OutlinedButton(onClick = { previewError = null; duration = 0L; previewRetryKey++ }, modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(onClick = { previewError = null; previewRetryKey++ }, modifier = Modifier.fillMaxWidth()) {
                                 Text("Retry preview")
                             }
                         }
