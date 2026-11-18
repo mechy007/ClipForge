@@ -57,7 +57,7 @@ fun YouTubeLivePanel(
         }.orEmpty()
     }
     var activeSessionId by remember { mutableStateOf<Long?>(restoredSession?.id) }
-    var status by remember { mutableStateOf(restoredSession?.let { "Restored " + restoredMarkers.size + " saved marker(s) from your last live session." } ?: "Monitor chat activity for your own authorised live content.") }
+    var status by remember { mutableStateOf(restoredSession?.let { "Restored " + restoredMarkers.size + " saved marker(s) from your last live session." } ?: "Monitor public chat activity for a livestream you are authorised to repurpose.") }
     var sessionTitle by remember { mutableStateOf(restoredSession?.title.orEmpty()) }
     var markers by remember { mutableStateOf(restoredMarkers) }
     var monitorJob by remember { mutableStateOf<Job?>(null) }
@@ -82,18 +82,18 @@ fun YouTubeLivePanel(
         modifier = Modifier.fillMaxWidth().then(
             if (visible) Modifier else Modifier.height(0.dp).clipToBounds().alpha(0f)
         ),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF171720)),
+        colors = CardDefaults.cardColors(containerColor = ClipForgePalette.Surface),
         shape = RoundedCornerShape(20.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("YOUTUBE LIVE", color = Color(0xFF9B83FF), fontWeight = FontWeight.Bold)
-            Text("Chat-driven highlight markers", style = MaterialTheme.typography.titleMedium)
+            Text("LIVE CHAT SIGNALS", color = ClipForgePalette.Accent, fontWeight = FontWeight.Bold)
+            Text("Public chat activity markers", style = MaterialTheme.typography.titleMedium)
             Text(
-                "This tool reads public live-chat activity and creates timestamps. It does not download or import YouTube video playback. For ordinary videos, use a video file you own or are authorised to process.",
-                color = Color(0xFF9A9AA9),
+                "This tool reads public live-chat activity and creates timestamps. It does not download or record YouTube video playback. Import an authorised recording to turn approved moments into clips.",
+                color = ClipForgePalette.Muted,
                 style = MaterialTheme.typography.bodySmall
             )
             OutlinedTextField(
@@ -101,7 +101,7 @@ fun YouTubeLivePanel(
                 onValueChange = { videoInput = it },
                 enabled = monitorJob?.isActive != true,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("YouTube Live URL or video ID") },
+                label = { Text("Public YouTube Live URL or video ID") },
                 singleLine = true
             )
             OutlinedTextField(
@@ -114,8 +114,8 @@ fun YouTubeLivePanel(
                 visualTransformation = PasswordVisualTransformation()
             )
             Text(
-                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Start monitoring before launching ClipForge camera or screen capture to align chat markers automatically. For imported recordings, verify the broadcast-to-recording offset manually and use only footage you own or are authorised to process.",
-                color = Color(0xFF9A9AA9),
+                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Markers use broadcast-relative timestamps; compare them with your imported recording and verify the offset before exporting. Only process footage you own or are authorised to use.",
+                color = ClipForgePalette.Muted,
                 style = MaterialTheme.typography.bodySmall
             )
             Button(
@@ -197,7 +197,7 @@ fun YouTubeLivePanel(
             ) {
                 Text(if (monitorJob?.isActive == true) "Stop monitoring" else "Connect and monitor")
             }
-            Text(status, color = Color(0xFFB7B7C4), style = MaterialTheme.typography.bodySmall)
+            Text(status, color = ClipForgePalette.Muted, style = MaterialTheme.typography.bodySmall)
             if (sessionTitle.isNotBlank()) {
                 Text(sessionTitle, fontWeight = FontWeight.SemiBold)
             }
@@ -205,10 +205,10 @@ fun YouTubeLivePanel(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
                         "${marker.startMs / 60_000L}:${((marker.startMs % 60_000L) / 1_000L).toString().padStart(2, '0')} · ${marker.messageCount} messages",
-                        color = Color.White,
+                        color = ClipForgePalette.Text,
                         style = MaterialTheme.typography.bodySmall
                     )
-                    Text("Spike", color = Color(0xFF75D6A2), style = MaterialTheme.typography.labelSmall)
+                    Text("Spike", color = ClipForgePalette.AccentSoft, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
