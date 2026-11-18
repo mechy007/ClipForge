@@ -59,16 +59,15 @@ object ClipExporter {
         onStatus: (String) -> Unit,
         onFinished: (Boolean, String) -> Unit
     ) {
-        val input = File(context.cacheDir, "clipforge_source_${System.nanoTime()}.mp4")
+        val temporaryInput = File(context.cacheDir, "clipforge_source_${System.nanoTime()}.mp4")
         val output = File(context.cacheDir, "clipforge_face_${System.nanoTime()}.mp4")
         ioExecutor.execute {
+            val existingSource = if (source.scheme == "file") source.path?.let(::File)?.takeIf { it.isFile } else null
+            val input = existingSource ?: temporaryInput
             try {
-                val sourceFile = if (source.scheme == "file") source.path?.let(::File) else null
-                if (sourceFile != null && sourceFile.isFile) {
-                    sourceFile.copyTo(input, overwrite = true)
-                } else {
+                if (existingSource == null) {
                     context.contentResolver.openInputStream(source)?.use { stream ->
-                        input.outputStream().buffered().use { target -> stream.copyTo(target) }
+                        temporaryInput.outputStream().buffered().use { target -> stream.copyTo(target) }
                     } ?: error("Could not read the selected source video.")
                 }
                 check(input.isFile && input.length() > 0L) { "The source video is empty." }
@@ -79,7 +78,7 @@ object ClipExporter {
                     "-c:a aac -b:a 128k -movflags +faststart ${quote(output.absolutePath)}"
                 mainHandler.post { onStatus("Rendering face-aware vertical framing…") }
                 FFmpegKit.executeAsync(command) { session ->
-                    input.delete()
+                    if (existingSource == null) input.delete()
                     if (!ReturnCode.isSuccess(session.returnCode) || !output.isFile || output.length() <= 0L) {
                         output.delete()
                         mainHandler.post {
@@ -90,7 +89,7 @@ object ClipExporter {
                     }
                 }
             } catch (error: Exception) {
-                input.delete()
+                if (existingSource == null) input.delete()
                 output.delete()
                 mainHandler.post {
                     onFinished(false, "Could not prepare face-aware export: ${error.localizedMessage ?: "unknown error"}")
