@@ -62,7 +62,7 @@ Keep one native pipeline with replaceable stages:
 4. Analyze: pluggable highlight scorer over timestamped transcript segments; deterministic local baseline first, optional remote LLM over transcript text only.
 5. Reframe: Android-compatible face detection/tracking with a motion fallback; smooth crop keyframes and reset at scene cuts.
 6. Captions: word/segment-timed caption model with editable text and style presets.
-7. Render: Media3 Transformer; hardware codec where available, bounded fallback and export progress.
+7. Render: Media3 Transformer; hardware codec where available, bounded fallback and export progress. Evaluate the Media3 Effect module for video overlays, filters and caption burn-in rather than adding a second renderer: https://developer.android.com/media/implement/editing-app.
 8. Projects: SQLite metadata + durable work state; no large video/audio blobs in the database.
 
 ## Rules before importing any upstream code
@@ -81,7 +81,7 @@ Keep one native pipeline with replaceable stages:
 2. Add a proper stage-oriented pipeline contract and durable job state.
 3. Add a deterministic, testable highlight-ranking layer that consumes existing Whisper timestamps.
 4. Implement caption data/export and aspect-ratio presets using Media3.
-5. Add Android-compatible face-aware reframing after selecting and validating the Android vision dependency.
+5. Add Android-compatible face-aware reframing using bundled ML Kit Face Detection as the offline-first candidate (16.1.7; approximately 6.9 MB APK size increase), sparse frame sampling and motion fallback. Keep model-ready checks and gracefully disable face tracking if initialization fails. Google documents face tracking support and bundled vs Play-services-delivered model trade-offs: https://developers.google.com/ml-kit/vision/face-detection/android.
 6. Add a real-video evaluation set and device profiling (RAM, thermal, battery, export time).
 
 ## Known limitations of this audit
