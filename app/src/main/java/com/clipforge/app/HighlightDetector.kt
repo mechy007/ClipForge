@@ -21,14 +21,11 @@ data class RankingWeights(
 
     fun explain(f: HighlightFeatures): String {
         val signals = listOf(
-            "speech flow" to density * f.density,
-            "hook language" to hooks * f.hooks,
+            "speech flow" to density * f.density, "hook language" to hooks * f.hooks,
             "expressive punctuation" to punctuation * f.punctuation,
             "varied vocabulary" to vocabulary * f.vocabulary,
-            "complete context" to context * f.context,
-            "low repetition" to novelty * f.novelty,
-            "clear phrasing" to clarity * f.clarity,
-            "strong opening" to opening * f.opening
+            "complete context" to context * f.context, "low repetition" to novelty * f.novelty,
+            "clear phrasing" to clarity * f.clarity, "strong opening" to opening * f.opening
         ).sortedByDescending { it.second }.filter { it.second > 0.015f }.take(2)
         return when (signals.size) {
             0 -> "Ranked using balanced offline content-quality signals."
@@ -69,7 +66,8 @@ object HighlightDetector {
         "why", "how", "secret", "mistake", "never", "best", "worst", "truth", "imagine",
         "because", "finally", "actually", "important", "remember", "surprising", "problem",
         "solution", "learn", "tip", "reason", "watch", "discover", "instead", "result",
-        "change", "revealed", "warning", "impossible", "simple", "hidden", "prove", "lesson"
+        "change", "revealed", "warning", "impossible", "simple", "hidden", "prove", "lesson",
+        "shocking", "unexpected", "amazing", "crazy", "challenge", "secretly", "mistakes"
     )
 
     fun detect(segments: List<TranscriptSegment>, durationMs: Long): List<ClipCandidate> =
@@ -95,19 +93,18 @@ object HighlightDetector {
                 val words = tokenize(text)
                 if (words.size >= MIN_WORDS) {
                     val f = features(rows, words, text, start, end)
-                    val firstSentence = text.split(Regex("(?<=[.!?])\\s+")).firstOrNull().orEmpty().trim()
+                    val insight = PassiveClipInsights.analyse(rows, text, start, end, durationMs)
                     candidates += ClipCandidate(
-                        startMs = start, endMs = end,
-                        title = firstSentence.take(64).ifBlank { "Highlight at " + format(start) },
-                        hook = text.take(180), score = weights.score(f), reason = weights.explain(f)
+                        startMs = insight.startMs, endMs = insight.endMs,
+                        title = insight.suggestedTitle,
+                        hook = text.take(180), score = weights.score(f),
+                        reason = weights.explain(f) + " Category: " + insight.category + ". " + insight.note
                     )
                 }
             }
             start += STEP_MS
         }
 
-        // Greedy interval NMS using intersection-over-union, following AutoClip's
-        // word-range IoU technique but operating only on available segment times.
         val chosen = mutableListOf<ClipCandidate>()
         candidates.sortedByDescending { it.score }.forEach { candidate ->
             if (chosen.none { existing ->
