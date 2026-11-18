@@ -23,7 +23,7 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) createTranscriptTable(db)
         if (oldVersion < 3) createLiveTables(db)
-        if (oldVersion < 4) {
+        if (oldVersion >= 3 && oldVersion < 4) {
             db.execSQL("ALTER TABLE live_sessions ADD COLUMN recording_start_ms INTEGER NOT NULL DEFAULT 0")
             db.execSQL("ALTER TABLE live_sessions ADD COLUMN recording_offset_ms INTEGER NOT NULL DEFAULT 0")
         }
