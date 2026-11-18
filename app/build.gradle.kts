@@ -1,3 +1,8 @@
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -18,7 +23,7 @@ val prepareWhisperModel by tasks.registering {
     doLast {
         val destination = whisperAssetFile.get().asFile
         fun sha256(file: java.io.File): String {
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = MessageDigest.getInstance("SHA-256")
             file.inputStream().buffered().use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (true) {
@@ -40,9 +45,9 @@ val prepareWhisperModel by tasks.registering {
         }
 
         destination.parentFile.mkdirs()
-        val temporary = java.io.File(destination.parentFile, destination.name + ".part")
+        val temporary = File(destination.parentFile, destination.name + ".part")
         temporary.delete()
-        val connection = (java.net.URL(whisperModelUrl).openConnection() as java.net.HttpURLConnection).apply {
+        val connection = (URL(whisperModelUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 20_000
             readTimeout = 60_000
             instanceFollowRedirects = true
