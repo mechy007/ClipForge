@@ -177,7 +177,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
             if (stream.isRecording) stream.stopRecord()
             recordingPath = if (file.exists() && file.length() > 0L) file.absolutePath else null
             liveActive = false
-            status = error.localizedMessage ?: "Could not start the live session."
+            status = "Could not start the live session. Check the RTMPS settings and available storage."
         }
     }
 
