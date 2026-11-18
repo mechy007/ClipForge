@@ -28,6 +28,7 @@ object BatchClipExporter {
         val parentDocument = DocumentsContract.buildDocumentUriUsingTree(folder, treeDocumentId)
         var completed = 0
         var batchSourceCache: java.io.File? = null
+        try {
         val exportSource = if (faceTrackingPath.isNotEmpty() && source.scheme != "file") {
             val cached = java.io.File(context.cacheDir, "clipforge_batch_source_${System.nanoTime()}.mp4")
             withContext(Dispatchers.IO) {
@@ -40,7 +41,6 @@ object BatchClipExporter {
             Uri.fromFile(cached)
         } else source
 
-        try {
         clips.forEachIndexed { index, clip ->
             val safeTitle = clip.title.replace(Regex("[^A-Za-z0-9._-]+"), "_")
                 .trim('_').take(32).ifBlank { "Highlight" }
