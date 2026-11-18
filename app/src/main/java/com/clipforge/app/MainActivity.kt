@@ -269,8 +269,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             if (candidates.isEmpty()) {
                                 message = "No live markers fall inside this recording. Check that the recording starts with the broadcast and covers the marked times."
                             } else {
-                                clips = (clips + candidates).distinctBy { it.startMs to it.endMs }
+                                val mergedCandidates = (clips + candidates).distinctBy { it.startMs to it.endMs }
                                     .sortedByDescending { it.score }
+                                clips = mergedCandidates
+                                selectedClips = selectedClips + candidates
+                                activeSection = "Highlights"
                                 message = if (hasRecordingStart) "Live markers automatically aligned to the local recording start. Review candidates before exporting." else "No linked recording start time was saved. Markers use broadcast-relative times; verify alignment manually before exporting."
                             }
                         }
