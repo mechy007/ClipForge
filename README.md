@@ -13,7 +13,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
 - Export each selected or edited clip as a vertical 9:16 MP4 using Media3 Transformer (center crop; face-aware tracking is a later milestone).
 - Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
-- Monitor public YouTube Live chat through the official Data API, detect activity spikes and retain timestamp markers for an authorised original recording.
+- Monitor public YouTube Live chat through the official Data API, detect activity spikes, and persist live sessions and timestamp markers in SQLite so they survive screen and app restarts.
 - Keep selected video, decoded audio, transcription and highlight scoring on-device; no AI API or remote video processing backend is used.
 
 Highlight scores are heuristic estimates of content signals. They do not predict views, engagement or virality. Results depend on speech quality and language.
@@ -37,7 +37,7 @@ The Whisper model is downloaded from its published model repository and stored i
 - Aspect-ratio-aware 9:16, 16:9 and 1:1 rendering.
 - Subject-aware reframing and face tracking.
 - Batch export, export progress, cancellation and recovery.
-- Durable YouTube Live monitoring, creator-owned encoder recording, marker persistence and broadcast-to-recording offset calibration.
+- Durable background YouTube Live monitoring, creator-owned encoder recording and broadcast-to-recording offset calibration. Marker/session persistence is now implemented.
 - Device performance, thermal and battery profiling.
 
 ## Licensing
