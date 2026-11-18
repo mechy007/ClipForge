@@ -94,6 +94,7 @@ fun YouTubeLivePanel(
                         markers = emptyList()
                         status = "Connecting to YouTube Live…"
                         monitorJob = scope.launch {
+                            val ownJob = coroutineContext[Job]
                             try {
                                 val session = api.resolveLiveSession(videoInput, apiKey)
                                 sessionTitle = session.title
@@ -103,7 +104,6 @@ fun YouTubeLivePanel(
                                 val seenIds = LinkedHashSet<String>()
                                 var pageToken: String? = null
                                 status = "Monitoring chat: ${session.title}"
-                                val ownJob = coroutineContext[Job]
                                 while (isActive) {
                                     val page = api.getChatPage(session, apiKey, pageToken)
                                     page.messages.forEach { chatMessage ->
