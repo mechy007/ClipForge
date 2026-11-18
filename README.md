@@ -7,6 +7,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Import supported direct HTTPS video-file links (MP4, WebM, MOV, MKV) with MIME validation, a 2 GB limit and partial-download cleanup.
 - Save analyzed projects and ranked highlights in a local SQLite library; reopen saved project metadata and highlights.
 - Bundle the multilingual Whisper tiny model inside the APK; install it into app-private storage on first launch and verify its size and SHA-256. No in-app model download is required.
+- Load the native Whisper model once per video transcription session and reuse the context across 30-second chunks, then release it when transcription finishes.
 - Decode a video's audio track locally to mono 16 kHz float PCM.
 - Transcribe audio in bounded 30-second chunks and retain timestamped transcript segments.
 - Choose automatic language detection or explicitly select English, Malayalam, Hindi, Tamil, Telugu, Kannada, Bengali, Urdu or Arabic for on-device transcription.
