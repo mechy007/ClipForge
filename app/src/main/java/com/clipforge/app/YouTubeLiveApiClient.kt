@@ -1,6 +1,6 @@
 package com.clipforge.app
 
-import android.net.Uri
+import java.net.URI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -150,18 +150,27 @@ class YouTubeLiveApiClient(
             val id = if (raw.matches(Regex("[A-Za-z0-9_-]{11}"))) {
                 raw
             } else {
-                val uri = runCatching { Uri.parse(raw) }.getOrNull()
+                val uri = runCatching { URI(raw) }.getOrNull()
                     ?: throw IllegalArgumentException("Enter a valid YouTube Live URL or video ID.")
+                require(uri.scheme.equals("https", ignoreCase = true) || uri.scheme.equals("http", ignoreCase = true)) {
+                    "Use a valid YouTube http(s) URL."
+                }
                 val host = uri.host?.lowercase().orEmpty()
                 require(host == "youtube.com" || host == "www.youtube.com" ||
                     host == "m.youtube.com" || host == "youtu.be") {
                     "Only YouTube video links are supported."
                 }
+                val pathSegments = uri.path.orEmpty().split('/').filter { it.isNotBlank() }
                 when {
-                    host == "youtu.be" -> uri.lastPathSegment.orEmpty()
-                    uri.path == "/watch" -> uri.getQueryParameter("v").orEmpty()
-                    uri.pathSegments.firstOrNull() in setOf("live", "embed", "shorts") ->
-                        uri.pathSegments.getOrNull(1).orEmpty()
+                    host == "youtu.be" -> pathSegments.firstOrNull().orEmpty()
+                    uri.path == "/watch" -> uri.rawQuery.orEmpty()
+                        .split('&')
+                        .firstOrNull { it.substringBefore('=') == "v" }
+                        ?.substringAfter('=', "")
+                        ?.let { java.net.URLDecoder.decode(it, Charsets.UTF_8.name()) }
+                        .orEmpty()
+                    pathSegments.firstOrNull() in setOf("live", "embed", "shorts") ->
+                        pathSegments.getOrNull(1).orEmpty()
                     else -> ""
                 }
             }
