@@ -894,7 +894,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 }
                                 Text("${clip.score}", color = Accent, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                             }
-                            Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
+                            Text(clip.hook, color = Color(0xFFE0E4D9), fontSize = 11.sp, maxLines = 3)
                             if (clip.reason.isNotBlank()) Text(clip.reason, color = AccentSoft, fontSize = 10.sp, maxLines = 2)
                             val decision = reviewed[clip] ?: ClipReviewDecision.PENDING
                             Text("Review · ${decision.name.lowercase().replaceFirstChar { it.uppercase() }}", color = when (decision) {
@@ -944,7 +944,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     onDuration = { },
                                     onError = { previewError = it },
                                     retryKey = previewRetryKey,
-                                    aspectRatio = 9f / 16f,
+                                    aspectRatio = exportAspectRatio,
                                     startAtMs = clip.startMs,
                                     endAtMs = clip.endMs
                                 )
