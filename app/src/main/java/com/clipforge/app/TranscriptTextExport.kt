@@ -11,7 +11,7 @@ object TranscriptTextExport {
             .forEach { segment ->
                 append(timestamp(segment.startMs))
                     .append("  ")
-                    .append(segment.text.replace("\\r", "").trim())
+                    .append(segment.text.replace("\r", "").trim())
                     .append('\n')
             }
     }
