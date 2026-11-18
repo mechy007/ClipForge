@@ -37,8 +37,7 @@ The Whisper model is downloaded from its published model repository and stored i
 - Durable background processing, animated/burned-in caption rendering, and face-aware reframing are not yet complete. SRT sidecar export is available separately.
 
 ## Next milestones
-- Animated caption styles and subtitle export.
-- Aspect-ratio-aware 9:16, 16:9 and 1:1 rendering.
+- Animated/burned-in caption styles and subtitle styling.
 - Subject-aware reframing and face tracking.
 - Durable batch-export recovery after process termination and explicit cancellation controls.
 - Durable background YouTube Live chat monitoring and multi-recording/session selection. Session persistence, recording-start alignment and foreground screen capture are implemented.
