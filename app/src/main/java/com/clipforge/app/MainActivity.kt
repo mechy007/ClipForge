@@ -146,6 +146,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
     var pendingCaptionCues by remember { mutableStateOf<List<CaptionCue>?>(null) }
     var editing by remember { mutableStateOf<ClipCandidate?>(null) }
+    var previewingClip by remember { mutableStateOf<ClipCandidate?>(null) }
     var editStart by remember { mutableLongStateOf(0L) }
     var editEnd by remember { mutableLongStateOf(0L) }
     var editorStartMs by rememberSaveable { mutableLongStateOf(0L) }
@@ -867,7 +868,18 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 Button(onClick = { batchPicker.launch(null) }, enabled = selectedClips.isNotEmpty() && !batchExporting, modifier = Modifier.fillMaxWidth()) {
                     Text(if (batchExporting) "Exporting selected clips…" else "Export ${selectedClips.size} selected clips")
                 }
-                if (batchExporting) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                if (batchExporting) {
+                    val fraction = if (batchStatus.total > 0) batchStatus.completed.toFloat() / batchStatus.total else 0f
+                    LinearProgressIndicator(progress = fraction.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth())
+                    Text("Verified ${batchStatus.completed} of ${batchStatus.total} clips", color = Muted, fontSize = 11.sp)
+                }
+                if (batchStatus.message.startsWith("Batch export stopped:")) {
+                    OutlinedButton(
+                        onClick = { batchPicker.launch(null) },
+                        enabled = !batchExporting && selectedClips.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Retry remaining clips") }
+                }
                 clips.forEachIndexed { index, clip ->
                     Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -902,14 +914,45 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 }, modifier = Modifier.weight(1f), enabled = !batchExporting) { Text("Reject") }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit") }
-                                OutlinedButton(onClick = { saveCaptions(clip) }, modifier = Modifier.weight(1f)) { Text("SRT") }
-                                Button(onClick = { save(clip) }, modifier = Modifier.weight(1f)) {
-                                    Icon(Icons.Default.PlayArrow, null); Text("  Export")
+                                OutlinedButton(onClick = { previewingClip = clip }, modifier = Modifier.weight(1f), enabled = video != null) {
+                                    Icon(Icons.Default.PlayArrow, null); Text("  Preview")
                                 }
+                                OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit timing") }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { saveCaptions(clip) }, modifier = Modifier.weight(1f)) { Text("Export SRT") }
+                                Button(onClick = { save(clip) }, modifier = Modifier.weight(1f)) { Text("Export MP4") }
                             }
                         }
                     }
+                }
+            }
+            if (activeSection == "Highlights") previewingClip?.let { clip ->
+                val source = video
+                if (source != null) {
+                    AlertDialog(
+                        onDismissRequest = { previewingClip = null },
+                        title = { Text(clip.title, fontWeight = FontWeight.Bold) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    "${time(clip.startMs)} – ${time(clip.endMs)} · ${((clip.endMs - clip.startMs) / 1000L)} sec",
+                                    color = Muted, fontSize = 11.sp
+                                )
+                                VideoPreview(
+                                    uri = source,
+                                    onDuration = { },
+                                    onError = { previewError = it },
+                                    retryKey = previewRetryKey,
+                                    aspectRatio = 9f / 16f,
+                                    startAtMs = clip.startMs,
+                                    endAtMs = clip.endMs
+                                )
+                                Text(clip.hook, color = Muted, fontSize = 11.sp, maxLines = 4)
+                            }
+                        },
+                        confirmButton = { TextButton(onClick = { previewingClip = null }) { Text("Close") } }
+                    )
                 }
             }
             if (activeSection == "Highlights") editing?.let { clip ->
@@ -971,10 +1014,12 @@ private fun VideoPreview(
     onDuration: (Long) -> Unit,
     onError: (String) -> Unit,
     retryKey: Int,
-    aspectRatio: Float = 9f / 16f
+    aspectRatio: Float = 9f / 16f,
+    startAtMs: Long? = null,
+    endAtMs: Long? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val player = remember(uri, retryKey) {
+    val player = remember(uri, retryKey, startAtMs, endAtMs) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
         }
@@ -989,6 +1034,7 @@ private fun VideoPreview(
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
                     durationMs = player.duration.coerceAtLeast(0L)
+                    startAtMs?.let { player.seekTo(it.coerceIn(0L, durationMs.coerceAtLeast(0L))) }
                     onDuration(durationMs)
                 }
             }
@@ -1008,6 +1054,10 @@ private fun VideoPreview(
         while (true) {
             if (!isSeeking) positionMs = player.currentPosition.coerceAtLeast(0L)
             if (player.duration > 0L) durationMs = player.duration
+            if (endAtMs != null && player.isPlaying && player.currentPosition >= endAtMs) {
+                player.pause()
+                player.seekTo(endAtMs.coerceIn(0L, durationMs.coerceAtLeast(0L)))
+            }
             delay(300L)
         }
     }
