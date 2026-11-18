@@ -56,21 +56,28 @@ private fun ScreenCaptureSetupScreen() {
     val activity = context as ComponentActivity
     val projectionManager = remember { context.getSystemService(MediaProjectionManager::class.java) }
     val liveSessionId = activity.intent.getLongExtra(MainActivity.EXTRA_LIVE_SESSION_ID, -1L)
+    val localOnly = remember { activity.intent.getBooleanExtra(ScreenCaptureService.EXTRA_LOCAL_ONLY, false) }
     var serverUrl by remember { mutableStateOf("rtmps://a.rtmps.youtube.com:443/live2") }
     var streamKey by remember { mutableStateOf("") }
     var pendingEndpoint by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf("Capture your Android screen and supported game audio while streaming and recording locally.") }
+    var status by remember {
+        mutableStateOf(
+            if (localOnly) "Record the livestream currently playing on your device to a local MP4."
+            else "Capture your Android screen and supported game audio while streaming and recording locally."
+        )
+    }
 
     val projectionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val data = result.data
-        if (result.resultCode == Activity.RESULT_OK && data != null && pendingEndpoint.isNotBlank()) {
+        if (result.resultCode == Activity.RESULT_OK && data != null && (localOnly || pendingEndpoint.isNotBlank())) {
             val serviceIntent = Intent(context, ScreenCaptureService::class.java).apply {
                 putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
                 putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
                 putExtra(ScreenCaptureService.EXTRA_RTMP_ENDPOINT, pendingEndpoint)
                 putExtra(ScreenCaptureService.EXTRA_LIVE_SESSION_ID, liveSessionId)
+                putExtra(ScreenCaptureService.EXTRA_LOCAL_ONLY, localOnly)
             }
             try {
                 ContextCompat.startForegroundService(context, serviceIntent)
@@ -103,13 +110,17 @@ private fun ScreenCaptureSetupScreen() {
             status = "Screen capture with internal game audio requires Android 10 or newer."
             return
         }
-        val base = serverUrl.trim().trimEnd('/')
-        val key = streamKey.trim()
-        if (!base.startsWith("rtmps://", ignoreCase = true) || key.isBlank() || key.any { it.isWhitespace() }) {
-            status = "Enter the secure RTMPS server URL and stream key from YouTube Studio."
-            return
+        if (localOnly) {
+            pendingEndpoint = ""
+        } else {
+            val base = serverUrl.trim().trimEnd('/')
+            val key = streamKey.trim()
+            if (!base.startsWith("rtmps://", ignoreCase = true) || key.isBlank() || key.any { it.isWhitespace() }) {
+                status = "Enter the secure RTMPS server URL and stream key from YouTube Studio."
+                return
+            }
+            pendingEndpoint = "$base/$key"
         }
-        pendingEndpoint = "$base/$key"
         val missing = buildList {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 add(Manifest.permission.RECORD_AUDIO)
@@ -133,38 +144,56 @@ private fun ScreenCaptureSetupScreen() {
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text("SCREEN / GAME CAPTURE", color = Color(0xFF9B83FF), fontWeight = FontWeight.Bold)
-            Text("Stream gameplay. Keep the original recording.", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            Text(
+                if (localOnly) "Record a livestream playing on this device."
+                else "Stream gameplay. Keep the original recording.",
+                color = Color.White, style = MaterialTheme.typography.titleLarge
+            )
             if (liveSessionId > 0L) Text("Linked to your latest YouTube Live chat session · markers will align to this recording.", color = Color(0xFF75D6A2), style = MaterialTheme.typography.bodySmall)
             Text(
-                "ClipForge captures the Android screen and supported internal game/media audio, sends it over RTMPS, and records a local MP4 at the same time. It does not record microphone commentary in this mode.",
+                if (localOnly) {
+                    "ClipForge records the screen and supported internal playback audio to a local MP4. Start this capture, switch to the livestream app or browser, and play the stream. Microphone commentary is not recorded."
+                } else {
+                    "ClipForge captures the Android screen and supported internal game/media audio, sends it over RTMPS, and records a local MP4 at the same time. It does not record microphone commentary in this mode."
+                },
                 color = Color(0xFFB7B7C4)
             )
-            OutlinedTextField(
-                value = serverUrl,
-                onValueChange = { serverUrl = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("YouTube RTMPS server URL") },
-                singleLine = true
-            )
-            OutlinedTextField(
-                value = streamKey,
-                onValueChange = { streamKey = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("YouTube stream key") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
-                singleLine = true
-            )
-            Text(
-                "Copy both values from YouTube Studio → Go Live → Stream settings. ClipForge does not save the stream key or log the full RTMPS URL.",
-                color = Color(0xFF9A9AA9),
-                style = MaterialTheme.typography.bodySmall
-            )
+            if (!localOnly) {
+                OutlinedTextField(
+                    value = serverUrl,
+                    onValueChange = { serverUrl = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("YouTube RTMPS server URL") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = streamKey,
+                    onValueChange = { streamKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("YouTube stream key") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrect = false),
+                    singleLine = true
+                )
+                Text(
+                    "Copy both values from YouTube Studio → Go Live → Stream settings. ClipForge does not save the stream key or log the full RTMPS URL.",
+                    color = Color(0xFF9A9AA9),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                Text(
+                    "Only record streams you have permission to capture. Android's screen-sharing consent is required. DRM-protected content may appear black; ClipForge does not bypass app or platform restrictions.",
+                    color = Color(0xFFFFD18A),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Button(
                 onClick = ::requestCapture,
-                enabled = streamKey.isNotBlank(),
+                enabled = localOnly || streamKey.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Grant screen access and start streaming") }
+            ) {
+                Text(if (localOnly) "Grant screen access and start recording" else "Grant screen access and start streaming")
+            }
             Text(status, color = Color(0xFFD6D6E0), style = MaterialTheme.typography.bodySmall)
             Text(
                 "Before starting: choose portrait/landscape orientation, hide private notifications, and close sensitive apps. Android will show a screen-sharing consent prompt and a persistent ClipForge notification with a Stop button. Android also asks for audio permission to initialise internal playback capture; ClipForge uses game/media playback audio, not microphone commentary. Protected apps may block capture, and internal audio depends on the game's playback-capture policy.",

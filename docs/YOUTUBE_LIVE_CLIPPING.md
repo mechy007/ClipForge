@@ -19,6 +19,12 @@ The YouTube Data API is not a video-download API. YouTube's developer policies p
 
 For the first release, the video source must be the creator's own original recording or footage they are authorised to process. Live chat produces timestamp markers; the source recording is supplied separately and matched against the broadcast timeline. A future creator-broadcast mode can record the original camera/encoder feed before it is sent to YouTube, subject to the user's rights and the relevant platform requirements.
 
+## User-authorised Android screen recording
+
+ClipForge also offers a user-initiated, local-only Android screen-recording mode for a livestream that is playing in another app or browser. The user starts the capture from ClipForge, approves Android's MediaProjection consent prompt, switches to the livestream app, and stops capture from the persistent notification. The existing screen-capture service records a local MP4 and can associate its start time with the active live-chat session.
+
+This mode does not extract a YouTube playback URL, download from YouTube servers, bypass DRM, or remove app/platform capture restrictions. Android may show protected content as a black frame, and internal audio is available only when the source app permits playback capture. Users must have the rights and permissions required to record and republish the content. This is a user-controlled screen recording, not a platform-level YouTube recording API.
+
 ## API setup
 
 - Enable YouTube Data API v3 in a Google Cloud project.
