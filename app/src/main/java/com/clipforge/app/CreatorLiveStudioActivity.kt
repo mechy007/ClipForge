@@ -276,6 +276,7 @@ private fun CreatorLiveStudioScreen(
         ) {
             Text("CREATOR LIVE STUDIO", color = Color(0xFF9B83FF), fontWeight = FontWeight.Bold)
             Text("Stream your own feed and keep a local original recording.", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            if (LocalContext.current is CreatorLiveStudioActivity && (LocalContext.current as CreatorLiveStudioActivity).intent.getLongExtra(MainActivity.EXTRA_LIVE_SESSION_ID, -1L) > 0L) Text("Linked to your latest YouTube Live chat session · markers will align to this recording.", color = Color(0xFF75D6A2), style = MaterialTheme.typography.bodySmall)
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF171720))) {
                 if (prepared) {
                     AndroidView(
