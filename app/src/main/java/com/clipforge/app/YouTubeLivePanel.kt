@@ -104,6 +104,7 @@ fun YouTubeLivePanel(
                     if (monitorJob?.isActive == true) {
                         monitorJob?.cancel()
                         monitorJob = null
+                        onActiveSessionChanged(null)
                         status = "Monitoring stopped. Existing markers are kept on this screen."
                     } else {
                         onMonitoringStarted()
@@ -164,7 +165,10 @@ fun YouTubeLivePanel(
                             } catch (error: Exception) {
                                 status = error.localizedMessage ?: "Could not monitor this live chat."
                             } finally {
-                                if (monitorJob === ownJob) monitorJob = null
+                                if (monitorJob === ownJob) {
+                                    monitorJob = null
+                                    onActiveSessionChanged(null)
+                                }
                             }
                         }
                     }
