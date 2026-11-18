@@ -227,8 +227,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             message = "Import your authorised original recording before creating clips from live markers."
                         } else {
                             val liveSession = projectDb.listLiveSessions().firstOrNull()
-                            val recordingOffsetMs = liveSession?.recordingOffsetMs ?: 0L
-                            val hasRecordingStart = (liveSession?.recordingStartMs ?: 0L) > 0L
+                            val recordingMatchesSession = liveSession?.recordingPath?.isNotBlank() == true &&
+                                video?.scheme == "file" && video?.path == liveSession.recordingPath
+                            val recordingOffsetMs = if (recordingMatchesSession) liveSession?.recordingOffsetMs ?: 0L else 0L
+                            val hasRecordingStart = recordingMatchesSession
                             val candidates = liveMarkers.mapNotNull { marker ->
                                 val markerTimeMs = LiveMarkerTimeline.toRecordingTime(marker.startMs, recordingOffsetMs)
                                     ?: return@mapNotNull null
