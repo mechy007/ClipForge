@@ -56,6 +56,7 @@ private fun ClipForgeHome() {
     var video by remember { mutableStateOf<Uri?>(null) }
     val projectDb = remember { ProjectDatabase(context) }
     var savedProjects by remember { mutableStateOf(projectDb.listProjects()) }
+    var activeProjectId by remember { mutableStateOf<Long?>(null) }
     var savedProjectHighlights by remember { mutableStateOf<List<SavedHighlight>>(emptyList()) }
     var linkText by remember { mutableStateOf("") }
     var linkStatus by remember { mutableStateOf("") }
@@ -84,6 +85,8 @@ private fun ClipForgeHome() {
     }
     var message by remember { mutableStateOf("Import a video to discover its best moments.") }
     var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
+    var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
+    var pendingCaptionCues by remember { mutableStateOf<List<CaptionCue>?>(null) }
     var editing by remember { mutableStateOf<ClipCandidate?>(null) }
     var editStart by remember { mutableLongStateOf(0L) }
     var editEnd by remember { mutableLongStateOf(0L) }
@@ -94,7 +97,7 @@ private fun ClipForgeHome() {
         if (uri != null) {
             try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }
         }
-        video = uri; duration = 0L; clips = emptyList(); editing = null
+        video = uri; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null; editing = null
         message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
@@ -105,11 +108,35 @@ private fun ClipForgeHome() {
                 onFinished = { _, result -> exportMessage = result; pending = null })
         } else { pending = null; if (dest == null) exportMessage = "Export cancelled." }
     }
+    val captionPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-subrip")) { dest ->
+        val cues = pendingCaptionCues
+        if (dest != null && cues != null) {
+            try {
+                val output = context.contentResolver.openOutputStream(dest, "w")
+                    ?: error("Could not open the selected subtitle save location.")
+                output.use { it.write(CaptionTrack.toSrt(cues).toByteArray(Charsets.UTF_8)) }
+                exportMessage = "Subtitles exported as SRT."
+            } catch (error: Exception) {
+                exportMessage = "Subtitle export failed: ${error.localizedMessage ?: "unknown error"}"
+            }
+        } else if (dest == null) {
+            exportMessage = "Subtitle export cancelled."
+        }
+        pendingCaptionCues = null
+    }
     fun save(clip: ClipCandidate) {
         pending = clip
-        savePicker.launch("ClipForge_\${clip.startMs / 1000}s.mp4")
+        savePicker.launch("ClipForge_${clip.startMs / 1000}s.mp4")
     }
-
+    fun saveCaptions(clip: ClipCandidate) {
+        val cues = CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs)
+        if (cues.isEmpty()) {
+            exportMessage = "No transcript captions are available for this clip."
+        } else {
+            pendingCaptionCues = cues
+            captionPicker.launch("ClipForge_${clip.startMs / 1000}s.srt")
+        }
+    }
     Surface(Modifier.fillMaxSize(), color = Ink) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -131,7 +158,7 @@ private fun ClipForgeHome() {
                         val imported = DirectVideoImporter.download(context, linkText) { p ->
                             if (p.downloadedBytes % (1024L * 1024L) < 64L * 1024L) scope.launch { linkStatus = if (p.totalBytes != null) "Downloaded ${p.downloadedBytes / 1_048_576} / ${p.totalBytes / 1_048_576} MB" else "Downloaded ${p.downloadedBytes / 1_048_576} MB" }
                         }
-                        video = imported; duration = 0L; clips = emptyList(); linkStatus = "Video imported. Preview it and run AI analysis."
+                        video = imported; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null; linkStatus = "Video imported. Preview it and run AI analysis."
                     } catch (e: Exception) { linkStatus = e.localizedMessage ?: "Video import failed." }
                     finally { importingLink = false }
                 }
@@ -148,8 +175,10 @@ private fun ClipForgeHome() {
                             }
                             TextButton(onClick = {
                                 video = Uri.parse(project.sourceUri); duration = project.durationMs
+                                activeProjectId = project.id
                                 savedProjectHighlights = projectDb.listHighlights(project.id)
                                 clips = savedProjectHighlights.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score) }
+                                transcriptSegments = projectDb.listTranscript(project.id)
                                 message = "Restored saved project."
                             }) { Text("Open") }
                         }
@@ -218,11 +247,26 @@ private fun ClipForgeHome() {
                                     currentPart = partMatch.groupValues[1].toIntOrNull() ?: currentPart
                                 }
                             })
+                            transcriptSegments = transcript
                             message = "Finding strong moments…"
                             val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration) }
+                            val existingProjectId = activeProjectId
+                            val persisted = withContext(Dispatchers.IO) {
+                                val id = existingProjectId ?: projectDb.saveProject(
+                                    title = src.lastPathSegment?.substringAfterLast('/')?.take(100)?.ifBlank { "ClipForge project" } ?: "ClipForge project",
+                                    sourceUri = src.toString(),
+                                    durationMs = duration,
+                                    status = "completed"
+                                )
+                                projectDb.saveHighlights(id, found)
+                                projectDb.saveTranscript(id, transcript)
+                                id to projectDb.listProjects()
+                            }
+                            activeProjectId = persisted.first
+                            savedProjects = persisted.second
                             clips = found
                             message = if (found.isEmpty()) "No clear speech highlights found. Try a video with spoken audio."
-                                else "Analysis complete · \${found.size} clips ranked"
+                                else "Analysis complete · ${found.size} clips ranked"
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
                     }
@@ -257,17 +301,18 @@ private fun ClipForgeHome() {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.size(32.dp).background(Violet.copy(alpha = .18f), CircleShape), contentAlignment = Alignment.Center) {
-                                    Text("\${index + 1}", color = Violet, fontWeight = FontWeight.Bold)
+                                    Text("${index + 1}", color = Violet, fontWeight = FontWeight.Bold)
                                 }
                                 Column(Modifier.weight(1f).padding(start = 9.dp)) {
                                     Text(clip.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                                    Text("\${time(clip.startMs)} – \${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
+                                    Text("${time(clip.startMs)} – ${time(clip.endMs)}", color = Muted, fontSize = 11.sp)
                                 }
-                                Text("\${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                Text("${clip.score}", color = Violet, fontSize = 19.sp, fontWeight = FontWeight.Bold)
                             }
                             Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                                OutlinedButton(onClick = { saveCaptions(clip) }, modifier = Modifier.weight(1f)) { Text("SRT") }
                                 Button(onClick = { save(clip) }, modifier = Modifier.weight(1f)) {
                                     Icon(Icons.Default.PlayArrow, null); Text("  Export")
                                 }
@@ -281,9 +326,9 @@ private fun ClipForgeHome() {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("QUICK CLIP EDITOR", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text(clip.title, fontWeight = FontWeight.Bold)
-                        Text("Start · \${time(editStart)}", color = Muted, fontSize = 12.sp)
+                        Text("Start · ${time(editStart)}", color = Muted, fontSize = 12.sp)
                         Slider(editStart.toFloat(), { editStart = it.toLong() }, valueRange = 0f..(editEnd - 1000).coerceAtLeast(0).toFloat())
-                        Text("End · \${time(editEnd)}", color = Muted, fontSize = 12.sp)
+                        Text("End · ${time(editEnd)}", color = Muted, fontSize = 12.sp)
                         Slider(editEnd.toFloat(), { editEnd = it.toLong() }, valueRange = (editStart + 1000).toFloat()..duration.coerceAtLeast(editStart + 1000).toFloat())
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { editing = null }, modifier = Modifier.weight(1f)) { Text("Close") }
