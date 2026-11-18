@@ -199,6 +199,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         clips = restored.first.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score, it.reason) }
         transcriptSegments = restored.second
         selectedClips = clips.toSet()
+        reviewed = restored.first.mapNotNull { saved ->
+            val candidate = ClipCandidate(saved.startMs, saved.endMs, saved.title, saved.transcript, saved.score, saved.reason)
+            val decision = runCatching { ClipReviewDecision.valueOf(saved.reviewStatus) }.getOrDefault(ClipReviewDecision.PENDING)
+            candidate to decision
+        }.toMap()
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -754,8 +759,15 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 else -> Muted
                             }, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(onClick = { reviewed = reviewed + (clip to ClipReviewDecision.APPROVED) }, modifier = Modifier.weight(1f), enabled = !batchExporting) { Text("Approve") }
-                                OutlinedButton(onClick = { reviewed = reviewed + (clip to ClipReviewDecision.REJECTED); selectedClips = selectedClips - clip }, modifier = Modifier.weight(1f), enabled = !batchExporting) { Text("Reject") }
+                                OutlinedButton(onClick = {
+                                    reviewed = reviewed + (clip to ClipReviewDecision.APPROVED)
+                                    activeProjectId?.let { projectDb.updateHighlightReview(it, clip.startMs, clip.endMs, "APPROVED") }
+                                }, modifier = Modifier.weight(1f), enabled = !batchExporting) { Text("Approve") }
+                                OutlinedButton(onClick = {
+                                    reviewed = reviewed + (clip to ClipReviewDecision.REJECTED)
+                                    selectedClips = selectedClips - clip
+                                    activeProjectId?.let { projectDb.updateHighlightReview(it, clip.startMs, clip.endMs, "REJECTED") }
+                                }, modifier = Modifier.weight(1f), enabled = !batchExporting) { Text("Reject") }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit") }
