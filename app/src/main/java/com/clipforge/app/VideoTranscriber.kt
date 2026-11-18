@@ -13,7 +13,8 @@ import java.io.File
 
 /**
  * End-to-end offline transcription. Decoded PCM is spooled to cache and sent
- * to Whisper in bounded 30-second chunks to limit peak memory on phones.
+ * to Whisper in bounded 30-second chunks. The native model context is loaded
+ * once per video and reused across chunks to avoid repeatedly loading 78 MB.
  */
 object VideoTranscriber {
     private const val CHUNK_SECONDS = 30
@@ -27,11 +28,16 @@ object VideoTranscriber {
         onStatus: (String) -> Unit = {}
     ): List<TranscriptSegment> = withContext(Dispatchers.IO) {
         val pcmFile = File(context.cacheDir, "clipforge-audio-" + System.nanoTime() + ".pcm")
+        var whisperSessionStarted = false
         try {
-            onStatus("Checking the offline speech model…")
+            onStatus("Preparing the bundled offline speech model…")
             WhisperModelManager.ensureModel(context) { _, _ -> }
             onStatus("Decoding video audio on this device…")
             AudioPcmExtractor.decodeToMono16Khz(context, videoUri, pcmFile)
+
+            WhisperEngine.beginSession(context)
+            whisperSessionStarted = true
+            onStatus("Starting on-device transcription…")
 
             val transcript = mutableListOf<TranscriptSegment>()
             DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
@@ -67,6 +73,7 @@ object VideoTranscriber {
 
             transcript.sortedBy { it.startMs }
         } finally {
+            if (whisperSessionStarted) WhisperEngine.endSession()
             pcmFile.delete()
         }
     }
