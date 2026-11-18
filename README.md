@@ -13,6 +13,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
 - Export each selected or edited clip as a vertical 9:16 MP4 using Media3 Transformer (center crop; face-aware tracking is a later milestone).
 - Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
+- Monitor public YouTube Live chat through the official Data API, detect activity spikes and retain timestamp markers for an authorised original recording.
 - Keep selected video, decoded audio, transcription and highlight scoring on-device; no AI API or remote video processing backend is used.
 
 Highlight scores are heuristic estimates of content signals. They do not predict views, engagement or virality. Results depend on speech quality and language.
@@ -28,7 +29,7 @@ The Whisper model is downloaded from its published model repository and stored i
 
 ## Current limitations
 - The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed.
-- Direct-link import supports direct HTTPS media files only, not YouTube or social-platform pages.
+- Direct-link import supports direct HTTPS media files only, not YouTube or social-platform pages. The YouTube Live integration reads metadata/chat only; it does not download or record YouTube audiovisual content. Markers must be matched to the creator's own original recording or footage the user is authorised to process.
 - Durable background processing, animated/burned-in caption rendering, aspect-ratio rendering and face-aware reframing are not yet complete. SRT sidecar export is available separately.
 
 ## Next milestones
@@ -36,6 +37,7 @@ The Whisper model is downloaded from its published model repository and stored i
 - Aspect-ratio-aware 9:16, 16:9 and 1:1 rendering.
 - Subject-aware reframing and face tracking.
 - Batch export, export progress, cancellation and recovery.
+- Durable YouTube Live monitoring, creator-owned encoder recording, marker persistence and broadcast-to-recording offset calibration.
 - Device performance, thermal and battery profiling.
 
 ## Licensing
