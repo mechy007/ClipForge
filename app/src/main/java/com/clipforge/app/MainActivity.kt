@@ -623,6 +623,7 @@ private fun VideoPreview(
     var isPlaying by remember(player) { mutableStateOf(false) }
     var positionMs by remember(player) { mutableLongStateOf(0L) }
     var durationMs by remember(player) { mutableLongStateOf(0L) }
+    var isSeeking by remember(player) { mutableStateOf(false) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -645,7 +646,7 @@ private fun VideoPreview(
     }
     LaunchedEffect(player) {
         while (true) {
-            positionMs = player.currentPosition.coerceAtLeast(0L)
+            if (!isSeeking) positionMs = player.currentPosition.coerceAtLeast(0L)
             if (player.duration > 0L) durationMs = player.duration
             delay(300L)
         }
@@ -686,8 +687,11 @@ private fun VideoPreview(
         }
         Slider(
             value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
-            onValueChange = { positionMs = it.toLong() },
-            onValueChangeFinished = { player.seekTo(positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L))) },
+            onValueChange = { isSeeking = true; positionMs = it.toLong() },
+            onValueChangeFinished = {
+                player.seekTo(positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L)))
+                isSeeking = false
+            },
             valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
             enabled = durationMs > 0L
         )
