@@ -5,6 +5,9 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Effects
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.ExportException
@@ -13,6 +16,7 @@ import androidx.media3.transformer.Transformer
 import java.io.File
 import java.util.concurrent.Executors
 
+@OptIn(UnstableApi::class)
 object ClipExporter {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor = Executors.newSingleThreadExecutor()
@@ -41,7 +45,13 @@ object ClipExporter {
                     .build()
             )
             .build()
-        val editedItem = EditedMediaItem.Builder(clippedItem).build()
+        val verticalCrop = Presentation.createForAspectRatio(
+            9f / 16f,
+            Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
+        ).copyWithUnsetSideRoundedTo(2)
+        val editedItem = EditedMediaItem.Builder(clippedItem)
+            .setEffects(Effects(emptyList(), listOf(verticalCrop)))
+            .build()
 
         val transformer = Transformer.Builder(context)
             .addListener(object : Transformer.Listener {
