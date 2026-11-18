@@ -34,6 +34,7 @@ class ScreenCaptureService : Service(), ConnectChecker {
         const val EXTRA_RTMP_ENDPOINT = "com.clipforge.app.extra.RTMP_ENDPOINT"
         const val EXTRA_LIVE_SESSION_ID = "com.clipforge.app.extra.LIVE_SESSION_ID"
         const val EXTRA_LOCAL_ONLY = "com.clipforge.app.extra.LOCAL_ONLY"
+        const val EXTRA_SOURCE_URL = "com.clipforge.app.extra.SOURCE_URL"
         private const val CHANNEL_ID = "clipforge_screen_capture"
         private const val NOTIFICATION_ID = 3107
     }
@@ -42,6 +43,7 @@ class ScreenCaptureService : Service(), ConnectChecker {
     private var projection: MediaProjection? = null
     private var recordingPath: String? = null
     @Volatile private var finishing = false
+    @Volatile private var failureReason: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var notificationManager: NotificationManager
 
@@ -133,7 +135,8 @@ class ScreenCaptureService : Service(), ConnectChecker {
                 if (localOnly) "Recording this device screen locally."
                 else "Screen capture started · streaming and recording locally."
             )
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            failureReason = error.localizedMessage ?: "Android could not start screen recording."
             finishCapture()
         }
         return START_NOT_STICKY
@@ -216,8 +219,22 @@ class ScreenCaptureService : Service(), ConnectChecker {
             notificationManager.notify(NOTIFICATION_ID, completed)
             stopForeground(STOP_FOREGROUND_DETACH)
         } else {
-            notificationManager.cancel(NOTIFICATION_ID)
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            val failure = failureReason
+            if (failure != null) {
+                val failed = NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                    .setContentTitle("ClipForge recording failed")
+                    .setContentText(failure.take(180))
+                    .setAutoCancel(true)
+                    .setOngoing(false)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                    .build()
+                notificationManager.notify(NOTIFICATION_ID, failed)
+                stopForeground(STOP_FOREGROUND_DETACH)
+            } else {
+                notificationManager.cancel(NOTIFICATION_ID)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            }
         }
         stopSelf()
     }

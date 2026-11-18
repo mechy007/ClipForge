@@ -14,6 +14,12 @@ class YouTubeLinkClassifierTest {
     }
 
     @Test
+    fun acceptsLiveWatchLinksForScreenRecording() {
+        assertTrue(YouTubeLinkClassifier.isYouTubeUrl("https://www.youtube.com/live/abcdefghijk"))
+        assertTrue(YouTubeLinkClassifier.isYouTubeUrl("https://youtube.com/watch?v=abcdefghijk"))
+    }
+
+    @Test
     fun rejectsLookalikeAndNonYouTubeHosts() {
         assertFalse(YouTubeLinkClassifier.isYouTubeUrl("https://youtube.com.example.org/watch?v=abcdefghijk"))
         assertFalse(YouTubeLinkClassifier.isYouTubeUrl("https://example.com/watch?v=abcdefghijk"))
