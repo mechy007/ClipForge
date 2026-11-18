@@ -23,8 +23,8 @@ object FfmpegAudioFallback {
         "-vn",
         "-ac", "1",
         "-ar", "16000",
-        "-c:a", "pcm_f32le",
-        "-f", "f32le",
+        "-c:a", "pcm_f32be",
+        "-f", "f32be",
         outputPath
     )
 
