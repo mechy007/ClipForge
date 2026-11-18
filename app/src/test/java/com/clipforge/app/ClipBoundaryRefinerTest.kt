@@ -14,7 +14,7 @@ class ClipBoundaryRefinerTest {
             AudioEnergyWindow(9_000L, 10_000L, .001f, .01f)
         )
         val result = ClipBoundaryRefiner.refine(2_500L, 8_500L, 12_000L, transcript, audio)
-        assertEquals(2_000L, result.first)
+        assertEquals(1_000L, result.first)
         assertEquals(9_000L, result.second)
     }
 

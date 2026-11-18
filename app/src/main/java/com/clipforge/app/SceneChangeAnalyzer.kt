@@ -12,7 +12,7 @@ import kotlin.math.abs
 
 /** Sparse, low-resolution scene-cut detector. At most two tiny frames are held at once. */
 object SceneChangeAnalyzer {
-    private const val SAMPLE_INTERVAL_MS = 1_000L
+    private const val SAMPLE_INTERVAL_MS = 2_000L
     private const val WIDTH = 96
     private const val HEIGHT = 54
     private const val CUT_THRESHOLD = 0.24f

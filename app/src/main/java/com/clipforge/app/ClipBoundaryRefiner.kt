@@ -48,8 +48,8 @@ object ClipBoundaryRefiner {
         val refinedStart = (safeSceneStart ?: quietStart ?: startMs).coerceIn(0L, durationMs - 1L)
         val refinedEnd = (safeSceneEnd ?: quietEnd ?: endMs).coerceIn(refinedStart + 1L, durationMs)
         // Never accept a snap that removes a detected speech segment.
-        val safeStart = if (transcript.any { it.startMs < startMs && it.endMs > refinedStart }) startMs else refinedStart
-        val safeEnd = if (transcript.any { it.startMs < endMs && it.endMs > refinedEnd }) endMs else refinedEnd
+        val safeStart = if (transcript.any { it.startMs < refinedStart && it.endMs > refinedStart }) startMs else refinedStart
+        val safeEnd = if (transcript.any { it.startMs < refinedEnd && it.endMs > refinedEnd }) endMs else refinedEnd
         return safeStart to max(safeStart + 1L, min(durationMs, safeEnd))
     }
 }

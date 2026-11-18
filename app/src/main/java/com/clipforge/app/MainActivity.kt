@@ -742,6 +742,13 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             transcriptSegments = transcript
                             message = "Detecting scene changes…"
                             val sceneCuts = SceneChangeAnalyzer.analyze(context, src, duration)
+                            message = "Tracking faces for automatic vertical framing…"
+                            faceTrackingPath = FaceTrackingAnalyzer.analyze(context, src, 0L, duration, exportAspectRatio)
+                            faceTrackingMessage = if (faceTrackingPath.isEmpty()) {
+                                "No faces detected. Exports will use a centered crop."
+                            } else {
+                                "Face-aware framing ready · ${faceTrackingPath.size} tracked moments."
+                            }
                             message = "Ranking speech, silence and scene changes…"
                             val found = withContext(Dispatchers.Default) {
                                 HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts)

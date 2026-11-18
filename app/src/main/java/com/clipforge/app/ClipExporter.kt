@@ -127,7 +127,6 @@ object ClipExporter {
 
     internal fun buildFaceCropFilter(path: List<CropFocus>, startMs: Long, endMs: Long): String {
         require(path.isNotEmpty() && endMs > startMs)
-        val clipDuration = (endMs - startMs) / 1000.0
         val ordered = path.sortedBy { it.timeMs }
         val before = ordered.lastOrNull { it.timeMs <= startMs } ?: ordered.first()
         val inside = ordered.filter { it.timeMs in startMs..endMs }
