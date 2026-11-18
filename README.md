@@ -14,6 +14,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Select individual detected highlights or all highlights, then export them individually or sequentially as a batch into a chosen Android folder. Each batch output is verified before it is marked complete; interrupted batches can resume remaining clips without re-exporting verified clips while the app process remains alive.
 - Export selected clips as vertical 9:16 Shorts, landscape 16:9 YouTube videos, or square 1:1 MP4s using Media3 Transformer. The chosen format applies to both single and batch exports, and the Studio preview uses the same crop-to-fill behavior.
 - Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
+- Export the complete timestamped transcript as a readable UTF-8 TXT file for notes, editing workflows and repurposing.
 - Monitor public YouTube Live chat through the official Data API, detect activity spikes, and persist live sessions and timestamp markers in SQLite so they survive screen and app restarts.
 - When capture is started from an existing monitored session, save the local recording start time and automatically convert broadcast-relative chat markers to the recording timeline. For automatic alignment, start YouTube Live chat monitoring first, then start the camera or screen capture.
 - Stream the creator’s own camera/microphone feed to an RTMPS endpoint while recording a local MP4 simultaneously; import the completed recording directly into Video Studio.
