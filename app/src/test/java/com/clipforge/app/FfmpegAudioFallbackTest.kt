@@ -14,7 +14,7 @@ class FfmpegAudioFallbackTest {
 
         assertEquals("/cache/input with spaces.mp4", args[args.indexOf("-i") + 1])
         assertEquals("/cache/output with spaces.pcm", args.last())
-        assertTrue(args.containsAll(listOf("-map", "0:a:0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_f32be", "-f", "f32be")))
+        assertTrue(listOf("-map", "0:a:0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_f32be", "-f", "f32be").all { it in args })
         assertTrue(args.none { it.contains("&&") || it.contains(";") })
     }
 
