@@ -12,6 +12,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Detect candidate 30-second highlights using offline transcript signals (speech density, hook words, punctuation and vocabulary variety).
 - Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
 - Export each selected or edited clip as MP4 using Media3 Transformer.
+- Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
 - Keep selected video, decoded audio, transcription and highlight scoring on-device; no AI API or remote video processing backend is used.
 
 Highlight scores are heuristic estimates of content signals. They do not predict views, engagement or virality. Results depend on speech quality and language.
@@ -28,7 +29,7 @@ The Whisper model is downloaded from its published model repository and stored i
 ## Current limitations
 - The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed.
 - Direct-link import supports direct HTTPS media files only, not YouTube or social-platform pages.
-- Durable background processing, captions, aspect-ratio rendering and face-aware reframing are not yet complete.
+- Durable background processing, animated/burned-in caption rendering, aspect-ratio rendering and face-aware reframing are not yet complete. SRT sidecar export is available separately.
 
 ## Next milestones
 - Animated caption styles and subtitle export.
