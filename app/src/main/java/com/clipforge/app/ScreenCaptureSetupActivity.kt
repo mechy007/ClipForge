@@ -133,7 +133,7 @@ private fun ScreenCaptureSetupScreen() {
             Text("SCREEN / GAME CAPTURE", color = Color(0xFF9B83FF), fontWeight = FontWeight.Bold)
             Text("Stream gameplay. Keep the original recording.", color = Color.White, style = MaterialTheme.typography.titleLarge)
             Text(
-                "ClipForge captures the Android screen and supported internal game/media audio, sends it over RTMPS, and records a local MP4 at the same time.",
+                "ClipForge captures the Android screen and supported internal game/media audio, sends it over RTMPS, and records a local MP4 at the same time. It does not record microphone commentary in this mode.",
                 color = Color(0xFFB7B7C4)
             )
             OutlinedTextField(
@@ -164,7 +164,7 @@ private fun ScreenCaptureSetupScreen() {
             ) { Text("Grant screen access and start streaming") }
             Text(status, color = Color(0xFFD6D6E0), style = MaterialTheme.typography.bodySmall)
             Text(
-                "Before starting: choose portrait/landscape orientation, hide private notifications, and close sensitive apps. Android will show a screen-sharing consent prompt and a persistent ClipForge notification with a Stop button. Protected apps may block capture; internal audio depends on the game's playback-capture policy.",
+                "Before starting: choose portrait/landscape orientation, hide private notifications, and close sensitive apps. Android will show a screen-sharing consent prompt and a persistent ClipForge notification with a Stop button. Android also asks for audio permission to initialise internal playback capture; ClipForge uses game/media playback audio, not microphone commentary. Protected apps may block capture, and internal audio depends on the game's playback-capture policy.",
                 color = Color(0xFF9A9AA9),
                 style = MaterialTheme.typography.bodySmall
             )
