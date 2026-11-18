@@ -35,6 +35,7 @@ import kotlin.coroutines.coroutineContext
 fun YouTubeLivePanel(
     database: ProjectDatabase,
     onMonitoringStarted: () -> Unit,
+    onActiveSessionChanged: (Long?) -> Unit,
     onMarker: (LiveChatHighlightMarker) -> Unit,
     onMarkersRestored: (List<LiveChatHighlightMarker>) -> Unit
 ) {
@@ -116,6 +117,7 @@ fun YouTubeLivePanel(
                                 sessionTitle = session.title
                                 val monitorStartedAtMs = System.currentTimeMillis()
                                 activeSessionId = database.saveLiveSession(session, monitorStartedAtMs)
+                                onActiveSessionChanged(activeSessionId)
                                 val startOffsetMs = (monitorStartedAtMs - session.actualStartTimeMs).coerceAtLeast(0L)
                                 val detector = LiveChatSpikeDetector(monitorStartOffsetMs = startOffsetMs)
                                 val seenIds = LinkedHashSet<String>()
