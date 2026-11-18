@@ -3,6 +3,7 @@ package com.clipforge.app
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -10,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +23,9 @@ import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -27,12 +33,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -111,7 +119,30 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var exportMessage by remember { mutableStateOf("") }
     var exportAspectRatio by rememberSaveable { mutableFloatStateOf(9f / 16f) }
     var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
+    var previewRetryKey by remember(video) { mutableIntStateOf(0) }
+    var previewError by remember(video) { mutableStateOf<String?>(null) }
+    var videoDisplayName by remember(video) { mutableStateOf("") }
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
+
+    LaunchedEffect(video) {
+        val selected = video
+        videoDisplayName = if (selected == null) "" else withContext(Dispatchers.IO) {
+            val providerName = if (selected.scheme == "content") {
+                runCatching {
+                    context.contentResolver.query(selected, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                        ?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                                if (index >= 0) cursor.getString(index) else null
+                            } else null
+                        }
+                }.getOrNull()
+            } else null
+            providerName?.takeIf { it.isNotBlank() }
+                ?: selected.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+                ?: "Selected video"
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -191,12 +222,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
             }
             Text("Make every moment count.", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 listOf("Studio", "Highlights", "Projects", "Live").forEach { section ->
                     Box(
                         Modifier.weight(1f).clip(RoundedCornerShape(11.dp))
                             .background(if (activeSection == section) Violet.copy(alpha = .2f) else Panel)
-                            .clickable { activeSection = section }
+                            .selectable(selected = activeSection == section, role = Role.Tab) { activeSection = section }
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -210,22 +241,46 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("PREVIEW CANVAS", color = Violet, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
-                                Text(video?.lastPathSegment?.substringAfterLast('/') ?: "Current video", color = Color.White, fontSize = 12.sp, maxLines = 1)
+                                Text("PREVIEW CANVAS", color = Color(0xFFE4E4E7), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                                Text(videoDisplayName.ifBlank { "Selected video" }, color = Color.White, fontSize = 12.sp, maxLines = 1)
                             }
-                            Text(if (duration > 0L) time(duration) else "Loading…", color = Muted, fontSize = 10.sp)
+                            Text(when {
+                                previewError != null -> "Preview error"
+                                duration > 0L -> time(duration)
+                                else -> "Preparing…"
+                            }, color = Muted, fontSize = 10.sp)
                         }
-                        VideoPreview(video!!, onDuration = { if (it > 0L) duration = it }, aspectRatio = exportAspectRatio)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        VideoPreview(
+                            uri = video!!,
+                            onDuration = { if (it > 0L) { duration = it; previewError = null } },
+                            onError = { previewError = it },
+                            retryKey = previewRetryKey,
+                            aspectRatio = exportAspectRatio
+                        )
+                        if (previewError != null) {
+                            Text("Could not preview this video: ${previewError}", color = Color(0xFFFF9A9A), fontSize = 11.sp)
+                            OutlinedButton(onClick = { previewError = null; duration = 0L; previewRetryKey++ }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Retry preview")
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf("9:16" to (9f / 16f), "16:9" to (16f / 9f), "1:1" to 1f).forEach { (label, ratio) ->
                                 Box(
                                     Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
                                         .background(if (exportAspectRatio == ratio) Violet.copy(alpha = .22f) else Ink)
-                                        .clickable { exportAspectRatio = ratio; exportAspectLabel = when (label) {
-                                            "9:16" -> "9:16 Shorts"
-                                            "16:9" -> "16:9 YouTube"
-                                            else -> "1:1 Square"
-                                        } }.padding(vertical = 8.dp),
+                                        .selectable(
+                                            selected = exportAspectRatio == ratio,
+                                            enabled = !batchExporting,
+                                            role = Role.RadioButton
+                                        ) {
+                                            exportAspectRatio = ratio
+                                            exportAspectLabel = when (label) {
+                                                "9:16" -> "9:16 Shorts"
+                                                "16:9" -> "16:9 YouTube"
+                                                else -> "1:1 Square"
+                                            }
+                                        }
+                                        .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(label, color = if (exportAspectRatio == ratio) Color.White else Muted,
@@ -551,19 +606,52 @@ private fun formatElapsed(seconds: Long): String = "%d:%02d".format(seconds / 60
 private fun time(ms: Long): String = "%d:%02d".format(ms / 60_000L, (ms / 1000L) % 60L)
 
 @Composable
-private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit, aspectRatio: Float = 9f / 16f) {
+private fun VideoPreview(
+    uri: Uri,
+    onDuration: (Long) -> Unit,
+    onError: (String) -> Unit,
+    retryKey: Int,
+    aspectRatio: Float = 9f / 16f
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val player = remember(uri) {
+    val player = remember(uri, retryKey) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_READY) onDuration(duration.coerceAtLeast(0L)) }
-            })
             prepare()
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    var isPlaying by remember(player) { mutableStateOf(false) }
+    var positionMs by remember(player) { mutableLongStateOf(0L) }
+    var durationMs by remember(player) { mutableLongStateOf(0L) }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY) {
+                    durationMs = player.duration.coerceAtLeast(0L)
+                    onDuration(durationMs)
+                }
+            }
+            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+            override fun onPlayerError(error: PlaybackException) {
+                onError(error.message ?: "Media3 could not open this file")
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+    LaunchedEffect(player) {
+        while (true) {
+            positionMs = player.currentPosition.coerceAtLeast(0L)
+            if (player.duration > 0L) durationMs = player.duration
+            delay(300L)
+        }
+    }
+
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         val previewMaxWidth = when {
             aspectRatio < 1f -> 150.dp
             aspectRatio == 1f -> 260.dp
@@ -572,10 +660,36 @@ private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit, aspectRatio: Floa
         AndroidView(
             factory = { PlayerView(it).apply {
                 this.player = player
-                useController = true
+                useController = false
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             } },
             modifier = Modifier.widthIn(max = previewMaxWidth).aspectRatio(aspectRatio)
+        )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            IconButton(onClick = { player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L)) }) {
+                Icon(Icons.Default.Replay10, contentDescription = "Rewind 10 seconds", tint = Color.White)
+            }
+            IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause preview" else "Play preview",
+                    tint = Color.White
+                )
+            }
+            IconButton(onClick = {
+                val end = durationMs.takeIf { it > 0L } ?: player.duration.coerceAtLeast(0L)
+                player.seekTo((player.currentPosition + 10_000L).coerceAtMost(end))
+            }) {
+                Icon(Icons.Default.Forward10, contentDescription = "Forward 10 seconds", tint = Color.White)
+            }
+            Text("${time(positionMs)} / ${time(durationMs)}", color = Muted, fontSize = 11.sp)
+        }
+        Slider(
+            value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
+            onValueChange = { positionMs = it.toLong() },
+            onValueChangeFinished = { player.seekTo(positionMs.coerceIn(0L, durationMs.coerceAtLeast(0L))) },
+            valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
+            enabled = durationMs > 0L
         )
     }
 }
