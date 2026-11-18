@@ -17,6 +17,8 @@ object BatchClipExporter {
         source: Uri,
         clips: List<ClipCandidate>,
         aspectRatio: Float = 9f / 16f,
+        transcript: List<TranscriptSegment> = emptyList(),
+        captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         onProgress: (Int, Int, ClipCandidate) -> Unit = { _, _, _ -> }
     ): Int {
         require(clips.isNotEmpty()) { "No highlights were selected." }
@@ -45,6 +47,8 @@ object BatchClipExporter {
                 ClipExporter.export(
                     context, source, destination, clip.startMs, clip.endMs,
                     aspectRatio = aspectRatio,
+                    captionCues = if (transcript.isEmpty()) emptyList() else CaptionTrack.fromTranscript(transcript, clip.startMs, clip.endMs),
+                    captionPreset = captionPreset,
                     onStatus = { },
                     onFinished = { success, message ->
                         if (continuation.isActive) continuation.resume(success to message)

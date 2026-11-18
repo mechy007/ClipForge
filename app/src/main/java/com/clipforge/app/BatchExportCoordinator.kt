@@ -29,7 +29,12 @@ object BatchExportCoordinator {
     private val mutableStatus = MutableStateFlow(BatchExportStatus())
     val status = mutableStatus.asStateFlow()
 
-    fun start(context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>, aspectRatio: Float = 9f / 16f) {
+    fun start(
+        context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>,
+        aspectRatio: Float = 9f / 16f,
+        transcript: List<TranscriptSegment> = emptyList(),
+        captionPreset: CaptionPreset = CaptionPreset.CLEAN
+    ) {
         val previous = mutableStatus.value
         if (previous.running) return
 
@@ -62,7 +67,7 @@ object BatchExportCoordinator {
         val appContext = context.applicationContext
         scope.launch {
             try {
-                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio) { done, _, clip ->
+                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset) { done, _, clip ->
                     val verifiedClips = alreadyCompleted + remaining.take(done)
                     mutableStatus.value = BatchExportStatus(
                         running = true,

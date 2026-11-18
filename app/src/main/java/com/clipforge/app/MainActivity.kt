@@ -236,7 +236,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             try {
                 context.contentResolver.takePersistableUriPermission(treeUri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             } catch (_: SecurityException) { }
-            BatchExportCoordinator.start(context, treeUri, source, chosen, exportAspectRatio)
+            BatchExportCoordinator.start(
+                context, treeUri, source, chosen, exportAspectRatio,
+                if (burnCaptions) transcriptSegments else emptyList(),
+                runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN)
+            )
         }
     }
     val captionPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-subrip")) { dest ->
