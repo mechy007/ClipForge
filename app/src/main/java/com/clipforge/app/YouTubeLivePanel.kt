@@ -95,7 +95,7 @@ fun YouTubeLivePanel(
                 visualTransformation = PasswordVisualTransformation()
             )
             Text(
-                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Select your own original recording in Video Studio; its timeline should begin with the broadcast.",
+                "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Start monitoring before launching ClipForge camera or screen capture to align chat markers automatically. For imported recordings, verify the broadcast-to-recording offset manually and use only footage you own or are authorised to process.",
                 color = Color(0xFF9A9AA9),
                 style = MaterialTheme.typography.bodySmall
             )
