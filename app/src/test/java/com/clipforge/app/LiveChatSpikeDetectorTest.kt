@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -37,5 +38,12 @@ class LiveChatSpikeDetectorTest {
         val detector = LiveChatSpikeDetector(minimumMessages = 5, monitorStartOffsetMs = 25_000L)
         repeat(10) { detector.addMessage(it * 1_000L) }
         assertTrue(detector.completeBucketsThrough(30_000L).isEmpty())
+    }
+
+    @Test
+    fun rejectsInvalidBucketDuration() {
+        assertThrows(IllegalArgumentException::class.java) {
+            LiveChatSpikeDetector(bucketDurationMs = 0L)
+        }
     }
 }
