@@ -79,6 +79,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var activeProjectId by rememberSaveable { mutableStateOf<Long?>(null) }
     var savedProjectHighlights by remember { mutableStateOf<List<SavedHighlight>>(emptyList()) }
     var linkText by remember { mutableStateOf("") }
+    var pendingYoutubeUrl by rememberSaveable { mutableStateOf("") }
     var linkStatus by remember { mutableStateOf("") }
     var importingLink by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(0L) }
@@ -359,6 +360,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             OutlinedTextField(value = linkText, onValueChange = { linkText = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Direct video link (MP4/WebM)") }, singleLine = true)
             OutlinedButton(onClick = {
                 scope.launch {
+                    if (YouTubeLinkClassifier.isYouTubeUrl(linkText)) {
+                        pendingYoutubeUrl = linkText.trim()
+                        activeSection = "Live"
+                        linkStatus = YouTubeLinkClassifier.importGuidance()
+                        return@launch
+                    }
                     importingLink = true; linkStatus = "Checking direct video link…"
                     try {
                         val imported = DirectVideoImporter.download(context, linkText) { p ->
@@ -459,6 +466,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             YouTubeLivePanel(
                 database = projectDb,
+                initialVideoUrl = pendingYoutubeUrl,
                 visible = activeSection == "Live",
                 onMonitoringStarted = { liveMarkers = emptyList(); activeLiveSessionId = null },
                 onActiveSessionChanged = { activeLiveSessionId = it },
