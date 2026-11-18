@@ -83,6 +83,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var importingLink by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(0L) }
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
+    var transcriptLanguage by rememberSaveable { mutableStateOf("auto") }
+    var languageMenuExpanded by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
     var modelMessage by remember { mutableStateOf("One-time download · works offline afterwards") }
@@ -468,6 +470,37 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                     Text(WhisperModelManager.MODEL_NAME, fontWeight = FontWeight.SemiBold)
                     Text("Approx. 78 MB · downloaded once · stays on this device", color = Muted, fontSize = 11.sp)
+                    Box {
+                        OutlinedButton(onClick = { languageMenuExpanded = true }, enabled = !analyzing) {
+                            Text("Transcript language · " + when (transcriptLanguage) {
+                                "en" -> "English"
+                                "ml" -> "Malayalam"
+                                "hi" -> "Hindi"
+                                "ta" -> "Tamil"
+                                else -> "Auto-detect"
+                            })
+                        }
+                        DropdownMenu(
+                            expanded = languageMenuExpanded,
+                            onDismissRequest = { languageMenuExpanded = false }
+                        ) {
+                            listOf(
+                                "auto" to "Auto-detect",
+                                "en" to "English",
+                                "ml" to "Malayalam",
+                                "hi" to "Hindi",
+                                "ta" to "Tamil"
+                            ).forEach { (code, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        transcriptLanguage = code
+                                        languageMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                     if (downloading) LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
                     Button(onClick = {
                         scope.launch {
@@ -499,7 +532,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         currentPart = 0
                         message = "Preparing audio locally…"
                         try {
-                            val transcript = VideoTranscriber.transcribe(context, src, onStatus = { status ->
+                            val transcript = VideoTranscriber.transcribe(context, src, language = transcriptLanguage.takeUnless { it == "auto" }, onStatus = { status ->
                                 message = status
                                 val partMatch = Regex("part (\\d+)").find(status)
                                 if (partMatch != null) {
