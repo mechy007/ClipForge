@@ -25,7 +25,8 @@ object SceneChangeAnalyzer {
             var previous: FloatArray? = null
             try {
                 retriever.setDataSource(context, source)
-                var timeMs = SAMPLE_INTERVAL_MS
+                val sampleStepMs = maxOf(SAMPLE_INTERVAL_MS, durationMs / 360L)
+                var timeMs = sampleStepMs
                 while (timeMs < durationMs) {
                     currentCoroutineContext().ensureActive()
                     val frame = retriever.getFrameAtTime(timeMs * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST)
@@ -39,11 +40,11 @@ object SceneChangeAnalyzer {
                             }
                             previous = current
                         } finally {
-                            small.recycle()
+                            if (small !== frame) small.recycle()
                             frame.recycle()
                         }
                     }
-                    timeMs += SAMPLE_INTERVAL_MS
+                    timeMs += sampleStepMs
                 }
             } finally {
                 retriever.release()
