@@ -43,17 +43,23 @@ private val Violet = Color(0xFF9B83FF)
 private val Muted = Color(0xFF9A9AA9)
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_LIVE_RECORDING_PATH = "com.clipforge.app.EXTRA_LIVE_RECORDING_PATH"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Violet, background = Ink, surface = Panel)) { ClipForgeHome() } }
+        val liveRecording = intent.getStringExtra(EXTRA_LIVE_RECORDING_PATH)
+            ?.let { Uri.fromFile(java.io.File(it)) }
+        setContent { MaterialTheme(colorScheme = darkColorScheme(primary = Violet, background = Ink, surface = Panel)) { ClipForgeHome(liveRecording) } }
     }
 }
 
 @Composable
-private fun ClipForgeHome() {
+private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    var video by remember { mutableStateOf<Uri?>(null) }
+    var video by remember(initialVideoUri) { mutableStateOf(initialVideoUri) }
     val projectDb = remember { ProjectDatabase(context) }
     var savedProjects by remember { mutableStateOf(projectDb.listProjects()) }
     var activeProjectId by remember { mutableStateOf<Long?>(null) }
@@ -83,7 +89,7 @@ private fun ClipForgeHome() {
             delay(1000L)
         }
     }
-    var message by remember { mutableStateOf("Import a video to discover its best moments.") }
+    var message by remember { mutableStateOf(if (initialVideoUri == null) "Import a video to discover its best moments." else "Your creator live recording is ready. Run AI highlight detection.") }
     var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
     var liveMarkers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
     var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
@@ -188,6 +194,12 @@ private fun ClipForgeHome() {
             }
             Text("Find highlights. Create clips. Keep your work on your device.", color = Muted, fontSize = 13.sp)
 
+            Button(
+                onClick = {
+                    context.startActivity(android.content.Intent(context, CreatorLiveStudioActivity::class.java))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Open Creator Live Studio · RTMPS + local recording") }
             YouTubeLivePanel(
                 database = projectDb,
                 onMonitoringStarted = { liveMarkers = emptyList() },
