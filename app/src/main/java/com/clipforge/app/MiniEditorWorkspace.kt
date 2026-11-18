@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -44,6 +45,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -74,6 +76,9 @@ fun MiniEditorWorkspace(
     }
     var isPlaying by remember(player) { mutableStateOf(false) }
     var playheadMs by remember(player) { mutableLongStateOf(initialStartMs) }
+    var previewSpeed by remember(player) { mutableStateOf(1f) }
+    var previewVolume by remember(player) { mutableStateOf(1f) }
+    var loopSelection by rememberSaveable(uri) { mutableStateOf(false) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -86,7 +91,9 @@ fun MiniEditorWorkspace(
             player.release()
         }
     }
-    LaunchedEffect(player, durationMs) {
+    LaunchedEffect(player, durationMs, previewSpeed, previewVolume) {
+        player.setPlaybackParameters(PlaybackParameters(previewSpeed, 1f))
+        player.volume = previewVolume
         while (true) {
             playheadMs = player.currentPosition.coerceIn(0L, durationMs)
             delay(250L)
@@ -173,6 +180,39 @@ fun MiniEditorWorkspace(
                     OutlinedButton(onClick = { onEndChange(playheadMs.coerceIn((start + 500L).coerceAtMost(durationMs), durationMs)) }) { Text("Mark out") }
                 }
                 Text("Selected range · ${formatEditorTime((end - start).coerceAtLeast(0L))}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Loop selected range", fontSize = 13.sp)
+                    Switch(checked = loopSelection, onCheckedChange = { loopSelection = it })
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { onStartChange(0L); onEndChange(durationMs); player.seekTo(0L); loopSelection = false }) {
+                        Text("Reset edit")
+                    }
+                }
+                LaunchedEffect(player, loopSelection, start, end) {
+                    if (loopSelection) {
+                        while (true) {
+                            if (player.currentPosition >= end) player.seekTo(start)
+                            delay(100L)
+                        }
+                    }
+                }
+            }
+        }
+
+        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("PREVIEW CONTROLS", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Playback speed · %.2fx".format(previewSpeed), fontSize = 13.sp)
+                    Text("Preview only", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Slider(value = previewSpeed, onValueChange = { previewSpeed = it }, valueRange = 0.5f..2f, steps = 5)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Preview volume", fontSize = 13.sp)
+                    Text("${(previewVolume * 100).toInt()}%", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Slider(value = previewVolume, onValueChange = { previewVolume = it }, valueRange = 0f..1f)
             }
         }
 
