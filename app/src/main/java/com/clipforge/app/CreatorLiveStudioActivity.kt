@@ -105,7 +105,7 @@ class CreatorLiveStudioActivity : ComponentActivity(), ConnectChecker {
     private fun prepareEncoder() {
         if (prepared) return
         val ready = try {
-            stream.prepareVideo(1280, 720, 2_500_000, 0) &&
+            stream.prepareVideo(1280, 720, 2_500_000, rotation = 0) &&
                 stream.prepareAudio(44_100, true, 128_000)
         } catch (error: Exception) {
             status = error.localizedMessage ?: "Could not prepare the video encoder."
