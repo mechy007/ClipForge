@@ -44,7 +44,8 @@ fun YouTubeLivePanel(
     var monitorJob by remember { mutableStateOf<Job?>(null) }
 
     DisposableEffect(monitorJob) {
-        onDispose { monitorJob?.cancel() }
+        val activeJob = monitorJob
+        onDispose { activeJob?.cancel() }
     }
 
     Card(
