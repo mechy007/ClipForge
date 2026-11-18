@@ -187,6 +187,30 @@ private fun ClipForgeHome() {
             }
             Text("Find highlights. Create clips. Keep your work on your device.", color = Muted, fontSize = 13.sp)
 
+            YouTubeLivePanel { marker ->
+                val source = video
+                if (source == null || duration <= 0L) {
+                    message = "Live marker saved on screen. Import your authorised original recording to turn it into a clip."
+                } else {
+                    val clipStart = (marker.startMs - 20_000L).coerceAtLeast(0L)
+                    val clipEnd = minOf(duration, marker.startMs + 10_000L)
+                    if (clipEnd > clipStart) {
+                        val candidate = ClipCandidate(
+                            startMs = clipStart,
+                            endMs = clipEnd,
+                            title = "Live chat spike · ${time(marker.startMs)}",
+                            hook = "${marker.messageCount} chat messages · baseline median ${"%.1f".format(marker.baselineMedian)}",
+                            score = 70
+                        )
+                        clips = (clips + candidate).distinctBy { it.startMs to it.endMs }
+                            .sortedByDescending { it.score }
+                        message = "Live marker added to the clip list. Check its timing against your original recording."
+                    } else {
+                        message = "This marker is outside the imported recording's duration."
+                    }
+                }
+            }
+
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                     Text("START A PROJECT", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
