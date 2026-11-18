@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -33,15 +35,17 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.AspectRatioFrameLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private val Ink = Color(0xFF0B0B10)
-private val Panel = Color(0xFF171720)
-private val Violet = Color(0xFF9B83FF)
-private val Muted = Color(0xFF9A9AA9)
+private val Ink = Color(0xFF09090B)
+private val Panel = Color(0xFF16161B)
+private val Violet = Color(0xFF6366F1)
+private val Muted = Color(0xFFA1A1AA)
+private val Cyan = Color(0xFF06B6D4)
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -169,21 +173,67 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         }
     }
     Surface(Modifier.fillMaxSize(), color = Ink) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(44.dp).background(Violet.copy(alpha = .18f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.ContentCut, null, tint = Violet)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(42.dp).background(Violet.copy(alpha = .18f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.ContentCut, null, tint = Violet)
+                    }
+                    Column(Modifier.padding(start = 10.dp)) {
+                        Text("ClipForge", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = (-.4).sp)
+                        Text("MOBILE VIDEO STUDIO", color = Muted, fontSize = 9.sp, letterSpacing = 1.1.sp)
+                    }
                 }
-                Column(Modifier.padding(start = 11.dp)) {
-                    Text("CLIPFORGE", fontSize = 19.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
-                    Text("Turn long videos into short clips", color = Muted, fontSize = 11.sp)
+                Spacer(Modifier.weight(1f))
+                Surface(color = Color(0xFF20202A), shape = RoundedCornerShape(10.dp)) {
+                    Text("ON-DEVICE AI", Modifier.padding(horizontal = 9.dp, vertical = 6.dp), color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            Text("Your next great moment.", fontSize = 27.sp, fontWeight = FontWeight.Bold)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+            Text("Make every moment count.", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 listOf("Studio", "Highlights", "Projects", "Live").forEach { section ->
-                    FilterChip(selected = activeSection == section, onClick = { activeSection = section }, label = { Text(section) })
+                    Box(
+                        Modifier.weight(1f).clip(RoundedCornerShape(11.dp))
+                            .background(if (activeSection == section) Violet.copy(alpha = .2f) else Panel)
+                            .clickable { activeSection = section }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(section, color = if (activeSection == section) Color.White else Muted,
+                            fontSize = 10.sp, fontWeight = if (activeSection == section) FontWeight.Bold else FontWeight.Medium)
+                    }
+                }
+            }
+            if (activeSection == "Studio" && video != null) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("PREVIEW CANVAS", color = Violet, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                                Text(video?.lastPathSegment?.substringAfterLast('/') ?: "Current video", color = Color.White, fontSize = 12.sp, maxLines = 1)
+                            }
+                            Text(if (duration > 0L) time(duration) else "Loading…", color = Muted, fontSize = 10.sp)
+                        }
+                        VideoPreview(video!!, onDuration = { if (it > 0L) duration = it }, aspectRatio = exportAspectRatio)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf("9:16" to (9f / 16f), "16:9" to (16f / 9f), "1:1" to 1f).forEach { (label, ratio) ->
+                                Box(
+                                    Modifier.weight(1f).clip(RoundedCornerShape(10.dp))
+                                        .background(if (exportAspectRatio == ratio) Violet.copy(alpha = .22f) else Ink)
+                                        .clickable { exportAspectRatio = ratio; exportAspectLabel = when (label) {
+                                            "9:16" -> "9:16 Shorts"
+                                            "16:9" -> "16:9 YouTube"
+                                            else -> "1:1 Square"
+                                        } }.padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(label, color = if (exportAspectRatio == ratio) Color.White else Muted,
+                                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (activeSection == "Studio") {
@@ -341,7 +391,6 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
 
             if (video != null) {
-                VideoPreview(video!!, onDuration = { if (it > 0L) duration = it })
                 Button(onClick = {
                     val src = video ?: return@Button
                     scope.launch {
@@ -502,7 +551,7 @@ private fun formatElapsed(seconds: Long): String = "%d:%02d".format(seconds / 60
 private fun time(ms: Long): String = "%d:%02d".format(ms / 60_000L, (ms / 1000L) % 60L)
 
 @Composable
-private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit) {
+private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit, aspectRatio: Float = 9f / 16f) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember(uri) {
         ExoPlayer.Builder(context).build().apply {
@@ -514,5 +563,19 @@ private fun VideoPreview(uri: Uri, onDuration: (Long) -> Unit) {
         }
     }
     DisposableEffect(player) { onDispose { player.release() } }
-    AndroidView(factory = { PlayerView(it).apply { this.player = player } }, modifier = Modifier.fillMaxWidth().height(210.dp))
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val previewMaxWidth = when {
+            aspectRatio < 1f -> 150.dp
+            aspectRatio == 1f -> 260.dp
+            else -> 520.dp
+        }
+        AndroidView(
+            factory = { PlayerView(it).apply {
+                this.player = player
+                useController = true
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            } },
+            modifier = Modifier.widthIn(max = previewMaxWidth).aspectRatio(aspectRatio)
+        )
+    }
 }
