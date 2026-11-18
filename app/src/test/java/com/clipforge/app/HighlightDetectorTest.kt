@@ -29,6 +29,34 @@ class HighlightDetectorTest {
             assertTrue(HighlightDetector.intersectionOverUnion(c.startMs,c.endMs,o.startMs,o.endMs)<=0.40)
         } }
     }
+    @Test fun targetDurationControlsMaximumCandidateWindow() {
+        val transcript = (0..29).map { i ->
+            val start = i * 2_000L
+            TranscriptSegment(
+                start, start + 1_800L,
+                "This important discovery explains why the best solution works and changes everything!"
+            )
+        }
+        val shortClips = HighlightDetector.detect(transcript, 60_000L, 15_000L)
+        val longClips = HighlightDetector.detect(transcript, 60_000L, 45_000L)
+
+        assertTrue(shortClips.isNotEmpty())
+        assertTrue(longClips.isNotEmpty())
+        assertTrue(shortClips.all { it.endMs - it.startMs <= 15_000L })
+        assertTrue(longClips.all { it.endMs - it.startMs <= 45_000L })
+    }
+
+    @Test fun targetDurationIsClampedToSupportedShortFormRange() {
+        val transcript = (0..29).map { i ->
+            val start = i * 2_000L
+            TranscriptSegment(start, start + 1_800L, "A useful explanation gives viewers context and a clear result.")
+        }
+        val tooShort = HighlightDetector.detect(transcript, 60_000L, 1_000L)
+        val tooLong = HighlightDetector.detect(transcript, 60_000L, 180_000L)
+        assertTrue(tooShort.all { it.endMs - it.startMs <= 15_000L })
+        assertTrue(tooLong.all { it.endMs - it.startMs <= 60_000L })
+    }
+
     @Test fun intervalIouUsesUnion() {
         assertEquals(0.5,HighlightDetector.intersectionOverUnion(0,30_000,10_000,40_000),0.0001)
         assertEquals(0.0,HighlightDetector.intersectionOverUnion(0,10,10,20),0.0)

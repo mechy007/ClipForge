@@ -42,8 +42,9 @@ data class HighlightFeatures(
 
 /** Offline, explainable ranking. Scores are not predictions of views or virality. */
 object HighlightDetector {
-    private const val WINDOW_MS = 30_000L
-    private const val STEP_MS = 10_000L
+    private const val DEFAULT_WINDOW_MS = 30_000L
+    private const val MIN_WINDOW_MS = 15_000L
+    private const val MAX_WINDOW_MS = 60_000L
     private const val MIN_WORDS = 12
     private const val DEDUPE_IOU = 0.40
 
@@ -70,11 +71,17 @@ object HighlightDetector {
         "shocking", "unexpected", "amazing", "crazy", "challenge", "secretly", "mistakes"
     )
 
-    fun detect(segments: List<TranscriptSegment>, durationMs: Long): List<ClipCandidate> =
-        detectWithWeights(segments, durationMs, productionWeights)
+    fun detect(
+        segments: List<TranscriptSegment>,
+        durationMs: Long,
+        targetDurationMs: Long = DEFAULT_WINDOW_MS
+    ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs)
 
     fun detectWithWeights(
-        segments: List<TranscriptSegment>, durationMs: Long, weights: RankingWeights
+        segments: List<TranscriptSegment>,
+        durationMs: Long,
+        weights: RankingWeights,
+        targetDurationMs: Long = DEFAULT_WINDOW_MS
     ): List<ClipCandidate> {
         if (segments.isEmpty() || durationMs <= 0L) return emptyList()
         val sorted = segments.filter {
@@ -82,10 +89,12 @@ object HighlightDetector {
         }.sortedBy { it.startMs }
         if (sorted.isEmpty()) return emptyList()
 
+        val windowMs = targetDurationMs.coerceIn(MIN_WINDOW_MS, MAX_WINDOW_MS)
+        val stepMs = (windowMs / 3L).coerceAtLeast(5_000L)
         val candidates = mutableListOf<ClipCandidate>()
         var start = 0L
         while (start < durationMs) {
-            val end = min(durationMs, start + WINDOW_MS)
+            val end = min(durationMs, start + windowMs)
             if (end - start < 8_000L) break
             val rows = sorted.filter { it.startMs < end && it.endMs > start }
             if (rows.isNotEmpty()) {
@@ -94,15 +103,17 @@ object HighlightDetector {
                 if (words.size >= MIN_WORDS) {
                     val f = features(rows, words, text, start, end)
                     val insight = PassiveClipInsights.analyse(rows, text, start, end, durationMs)
+                    val clipStart = insight.startMs.coerceIn(start, end - 1L)
+                    val clipEnd = insight.endMs.coerceIn(clipStart + 1L, end)
                     candidates += ClipCandidate(
-                        startMs = insight.startMs, endMs = insight.endMs,
+                        startMs = clipStart, endMs = clipEnd,
                         title = insight.suggestedTitle,
                         hook = text.take(180), score = weights.score(f),
                         reason = weights.explain(f) + " Category: " + insight.category + ". " + insight.note
                     )
                 }
             }
-            start += STEP_MS
+            start += stepMs
         }
 
         val chosen = mutableListOf<ClipCandidate>()
