@@ -16,6 +16,7 @@ object BatchClipExporter {
         folder: Uri,
         source: Uri,
         clips: List<ClipCandidate>,
+        aspectRatio: Float = 9f / 16f,
         onProgress: (Int, Int, ClipCandidate) -> Unit = { _, _, _ -> }
     ): Int {
         require(clips.isNotEmpty()) { "No highlights were selected." }
@@ -27,9 +28,14 @@ object BatchClipExporter {
         clips.forEachIndexed { index, clip ->
             val safeTitle = clip.title.replace(Regex("[^A-Za-z0-9._-]+"), "_")
                 .trim('_').take(32).ifBlank { "Highlight" }
+            val ratioTag = when {
+                aspectRatio > 1.2f -> "16x9"
+                aspectRatio < 0.8f -> "9x16"
+                else -> "1x1"
+            }
             val name = String.format(
-                Locale.US, "ClipForge_%ds-%ds_%s.mp4",
-                clip.startMs / 1000L, clip.endMs / 1000L, safeTitle
+                Locale.US, "ClipForge_%s_%ds-%ds_%s.mp4",
+                ratioTag, clip.startMs / 1000L, clip.endMs / 1000L, safeTitle
             )
             val destination = withContext(Dispatchers.IO) {
                 DocumentsContract.createDocument(resolver, parentDocument, "video/mp4", name)
@@ -38,6 +44,7 @@ object BatchClipExporter {
             val result = suspendCancellableCoroutine<Pair<Boolean, String>> { continuation ->
                 ClipExporter.export(
                     context, source, destination, clip.startMs, clip.endMs,
+                    aspectRatio = aspectRatio,
                     onStatus = { },
                     onFinished = { success, message ->
                         if (continuation.isActive) continuation.resume(success to message)

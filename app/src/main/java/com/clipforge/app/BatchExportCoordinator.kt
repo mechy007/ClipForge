@@ -16,6 +16,7 @@ data class BatchExportStatus(
     val message: String = "",
     val sourceUri: String? = null,
     val folderUri: String? = null,
+    val aspectRatio: Float = 9f / 16f,
     val completedClips: List<ClipCandidate> = emptyList()
 )
 
@@ -28,12 +29,12 @@ object BatchExportCoordinator {
     private val mutableStatus = MutableStateFlow(BatchExportStatus())
     val status = mutableStatus.asStateFlow()
 
-    fun start(context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>) {
+    fun start(context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>, aspectRatio: Float = 9f / 16f) {
         val previous = mutableStatus.value
         if (previous.running) return
 
         val sameBatch = previous.sourceUri == source.toString() &&
-            previous.folderUri == folder.toString()
+            previous.folderUri == folder.toString() && previous.aspectRatio == aspectRatio
         val alreadyCompleted = if (sameBatch) previous.completedClips else emptyList()
         val remaining = clips.filterNot { it in alreadyCompleted }
         if (remaining.isEmpty()) {
@@ -53,12 +54,13 @@ object BatchExportCoordinator {
             message = "Resuming export · ${remaining.size} clip(s) remaining…",
             sourceUri = source.toString(),
             folderUri = folder.toString(),
+            aspectRatio = aspectRatio,
             completedClips = alreadyCompleted
         )
         val appContext = context.applicationContext
         scope.launch {
             try {
-                BatchClipExporter.exportAll(appContext, folder, source, remaining) { done, _, clip ->
+                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio) { done, _, clip ->
                     val verifiedClips = alreadyCompleted + remaining.take(done)
                     mutableStatus.value = BatchExportStatus(
                         running = true,
@@ -67,6 +69,7 @@ object BatchExportCoordinator {
                         message = "Exporting ${verifiedClips.size} / ${clips.size} · ${clip.title}",
                         sourceUri = source.toString(),
                         folderUri = folder.toString(),
+                        aspectRatio = aspectRatio,
                         completedClips = verifiedClips
                     )
                 }
@@ -78,6 +81,7 @@ object BatchExportCoordinator {
                     message = "Batch export complete · ${completedClips.size} clips saved and verified. Source video kept for safety.",
                     sourceUri = source.toString(),
                     folderUri = folder.toString(),
+                    aspectRatio = aspectRatio,
                     completedClips = completedClips
                 )
             } catch (error: Exception) {

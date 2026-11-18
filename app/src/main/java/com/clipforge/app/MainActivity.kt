@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -104,6 +105,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var editStart by remember { mutableLongStateOf(0L) }
     var editEnd by remember { mutableLongStateOf(0L) }
     var exportMessage by remember { mutableStateOf("") }
+    var exportAspectRatio by rememberSaveable { mutableFloatStateOf(9f / 16f) }
+    var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -117,6 +120,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         val src = video; val clip = pending
         if (dest != null && src != null && clip != null) {
             ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
+                aspectRatio = exportAspectRatio,
                 onStatus = { exportMessage = it },
                 onFinished = { _, result -> exportMessage = result; pending = null })
         } else { pending = null; if (dest == null) exportMessage = "Export cancelled." }
@@ -132,7 +136,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             try {
                 context.contentResolver.takePersistableUriPermission(treeUri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             } catch (_: SecurityException) { }
-            BatchExportCoordinator.start(context, treeUri, source, chosen)
+            BatchExportCoordinator.start(context, treeUri, source, chosen, exportAspectRatio)
         }
     }
     val captionPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-subrip")) { dest ->
@@ -414,6 +418,17 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                     TextButton(onClick = { selectedClips = if (selectedClips.size == clips.size) emptySet() else clips.toSet() }, enabled = !batchExporting) {
                         Text(if (selectedClips.size == clips.size) "Deselect all" else "Select all")
+                    }
+                }
+                Text("Export format", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    listOf("9:16 Shorts" to (9f / 16f), "16:9 YouTube" to (16f / 9f), "1:1 Square" to 1f).forEach { (label, ratio) ->
+                        FilterChip(
+                            selected = exportAspectLabel == label,
+                            onClick = { exportAspectLabel = label; exportAspectRatio = ratio },
+                            label = { Text(label, fontSize = 11.sp) },
+                            enabled = !batchExporting
+                        )
                     }
                 }
                 Button(onClick = { batchPicker.launch(null) }, enabled = selectedClips.isNotEmpty() && !batchExporting, modifier = Modifier.fillMaxWidth()) {

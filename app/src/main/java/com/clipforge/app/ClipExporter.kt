@@ -27,6 +27,7 @@ object ClipExporter {
         destination: Uri,
         startMs: Long,
         endMs: Long,
+        aspectRatio: Float = 9f / 16f,
         onStatus: (String) -> Unit,
         onFinished: (Boolean, String) -> Unit
     ) {
@@ -46,7 +47,7 @@ object ClipExporter {
             )
             .build()
         val verticalCrop = Presentation.createForAspectRatio(
-            9f / 16f,
+            aspectRatio.coerceIn(0.5f, 2.0f),
             Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         )
         val editedItem = EditedMediaItem.Builder(clippedItem)
