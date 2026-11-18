@@ -35,8 +35,8 @@ object VideoTranscriber {
             onStatus("Decoding video audio on this device…")
             AudioPcmExtractor.decodeToMono16Khz(context, videoUri, pcmFile)
 
-            WhisperEngine.beginSession(context)
             whisperSessionStarted = true
+            WhisperEngine.beginSession(context)
             onStatus("Starting on-device transcription…")
 
             val transcript = mutableListOf<TranscriptSegment>()
