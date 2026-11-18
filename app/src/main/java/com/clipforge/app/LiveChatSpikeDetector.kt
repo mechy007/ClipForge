@@ -24,6 +24,8 @@ class LiveChatSpikeDetector(
     private val history = ArrayDeque<Int>()
     private var nextBucketStartMs = 0L
     private var lastMarkerMs = Long.MIN_VALUE
+    var lateMessageCount: Long = 0L
+        private set
 
     init {
         require(minimumMessages > 0)
@@ -35,10 +37,18 @@ class LiveChatSpikeDetector(
             (monitorStartOffsetMs.coerceAtLeast(0L) / bucketDurationMs) * bucketDurationMs
     }
 
-    fun addMessage(broadcastOffsetMs: Long) {
-        if (broadcastOffsetMs < nextBucketStartMs) return
+    /**
+     * Returns false for messages older than the finalized watermark.
+     * Such messages are counted explicitly and never silently folded into a later bucket.
+     */
+    fun addMessage(broadcastOffsetMs: Long): Boolean {
+        if (broadcastOffsetMs < nextBucketStartMs) {
+            lateMessageCount += 1
+            return false
+        }
         val bucketStart = (broadcastOffsetMs / bucketDurationMs) * bucketDurationMs
         bucketCounts[bucketStart] = (bucketCounts[bucketStart] ?: 0) + 1
+        return true
     }
 
     /** Completes buckets strictly before [broadcastOffsetMs] and returns new markers. */
