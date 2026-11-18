@@ -32,6 +32,7 @@ class ScreenCaptureService : Service(), ConnectChecker {
         const val EXTRA_RESULT_CODE = "com.clipforge.app.extra.SCREEN_RESULT_CODE"
         const val EXTRA_RESULT_DATA = "com.clipforge.app.extra.SCREEN_RESULT_DATA"
         const val EXTRA_RTMP_ENDPOINT = "com.clipforge.app.extra.RTMP_ENDPOINT"
+        const val EXTRA_LIVE_SESSION_ID = "com.clipforge.app.extra.LIVE_SESSION_ID"
         private const val CHANNEL_ID = "clipforge_screen_capture"
         private const val NOTIFICATION_ID = 3107
     }
@@ -112,6 +113,10 @@ class ScreenCaptureService : Service(), ConnectChecker {
                 "ClipForge_Screen_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4"
             )
             recordingPath = file.absolutePath
+            val liveSessionId = intent?.getLongExtra(EXTRA_LIVE_SESSION_ID, -1L) ?: -1L
+            if (liveSessionId > 0L) {
+                ProjectDatabase(this).saveLiveRecordingStart(liveSessionId, System.currentTimeMillis())
+            }
             liveStream.startRecord(file.absolutePath) { status ->
                 if (status == RecordController.Status.RECORDING) {
                     updateActiveNotification("Screen recording active · connecting to RTMPS.")
