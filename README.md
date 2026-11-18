@@ -15,6 +15,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
 - Monitor public YouTube Live chat through the official Data API, detect activity spikes, and persist live sessions and timestamp markers in SQLite so they survive screen and app restarts.
 - Stream the creator’s own camera/microphone feed to an RTMPS endpoint while recording a local MP4 simultaneously; import the completed recording directly into Video Studio.
+- Capture the Android device screen and supported internal game/media audio through Android MediaProjection, stream it over RTMPS from a foreground service, and record a local MP4 simultaneously. A completed recording opens directly in Video Studio.
 - Keep selected video, decoded audio, transcription and highlight scoring on-device; no AI API or remote video processing backend is used.
 
 Highlight scores are heuristic estimates of content signals. They do not predict views, engagement or virality. Results depend on speech quality and language.
@@ -30,7 +31,7 @@ The Whisper model is downloaded from its published model repository and stored i
 
 ## Current limitations
 - The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed.
-- Direct-link import supports direct HTTPS media files only, not YouTube or social-platform pages. The YouTube Live integration reads metadata/chat only; it does not download or record YouTube playback. Creator Live Studio captures a new camera/microphone feed that the user owns. The first studio build requires a manually supplied RTMPS server URL and stream key, runs only while the studio screen stays open, and does not yet capture the device screen/gameplay or create broadcasts through YouTube OAuth.
+- Direct-link import supports direct HTTPS media files only, not YouTube or social-platform pages. The YouTube Live integration reads metadata/chat only; it does not download or record YouTube playback. Creator Live Studio captures a new camera/microphone feed that the user owns. The camera studio requires a manually supplied RTMPS server URL and stream key and runs while its activity stays open. Screen/game capture requires Android 10+, a user-approved MediaProjection session, notification permission, and a manually supplied RTMPS server URL/key. Internal audio capture depends on the source app allowing playback capture; protected apps may block it. Set screen orientation before starting. Neither studio creates broadcasts through YouTube OAuth.
 - Durable background processing, animated/burned-in caption rendering, aspect-ratio rendering and face-aware reframing are not yet complete. SRT sidecar export is available separately.
 
 ## Next milestones
@@ -38,7 +39,7 @@ The Whisper model is downloaded from its published model repository and stored i
 - Aspect-ratio-aware 9:16, 16:9 and 1:1 rendering.
 - Subject-aware reframing and face tracking.
 - Batch export, export progress, cancellation and recovery.
-- Durable background YouTube Live monitoring, creator-owned encoder recording and broadcast-to-recording offset calibration. Marker/session persistence is now implemented.
+- Durable background YouTube Live chat monitoring and broadcast-to-recording offset calibration. Marker/session persistence and foreground screen capture are implemented.
 - Device performance, thermal and battery profiling.
 
 ## Licensing
