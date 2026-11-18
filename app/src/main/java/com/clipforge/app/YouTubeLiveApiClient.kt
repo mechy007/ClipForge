@@ -113,7 +113,7 @@ class YouTubeLiveApiClient(
         YouTubeChatPage(
             messages = messages,
             nextPageToken = root.optString("nextPageToken").takeIf { it.isNotBlank() },
-            pollingIntervalMs = root.optLong("pollingIntervalMillis", 5_000L).coerceIn(1_000L, 60_000L),
+            pollingIntervalMs = root.optLong("pollingIntervalMillis", 5_000L).coerceAtLeast(1_000L),
             offline = root.has("offlineAt")
         )
     }
