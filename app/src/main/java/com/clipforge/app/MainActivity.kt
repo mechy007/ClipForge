@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -104,8 +105,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var editStart by remember { mutableLongStateOf(0L) }
     var editEnd by remember { mutableLongStateOf(0L) }
     var exportMessage by remember { mutableStateOf("") }
-    var exportAspectRatio by remember { mutableFloatStateOf(9f / 16f) }
-    var exportAspectLabel by remember { mutableStateOf("9:16 Shorts") }
+    var exportAspectRatio by rememberSaveable { mutableFloatStateOf(9f / 16f) }
+    var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
     var pending by remember { mutableStateOf<ClipCandidate?>(null) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
