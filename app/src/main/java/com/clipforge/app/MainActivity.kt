@@ -698,13 +698,17 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
             }
             if (activeSection == "Highlights" && clips.isNotEmpty()) {
+                val reviewableClips = clips.filter { reviewed[it] != ClipReviewDecision.REJECTED }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("AI Highlights", fontSize = 21.sp, fontWeight = FontWeight.Bold)
                         Text("${clips.size} moments ranked · choose what to export", color = Muted, fontSize = 11.sp)
                     }
-                    TextButton(onClick = { selectedClips = if (selectedClips.size == clips.size) emptySet() else clips.toSet() }, enabled = !batchExporting) {
-                        Text(if (selectedClips.size == clips.size) "Deselect all" else "Select all")
+                    TextButton(
+                        onClick = { selectedClips = if (selectedClips.containsAll(reviewableClips)) emptySet() else reviewableClips.toSet() },
+                        enabled = !batchExporting
+                    ) {
+                        Text(if (selectedClips.containsAll(reviewableClips)) "Deselect all" else "Select all")
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
