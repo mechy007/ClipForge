@@ -15,7 +15,27 @@ data class AudioEnergyWindow(
  * loudness alone is not treated as excitement, and all values are normalized
  * against the current source so quiet recordings are not automatically penalized.
  */
+data class AudioSignalReference(val rms: Float, val peak: Float)
+
 object AudioSignalScorer {
+    /**
+     * Uses the existing source-relative percentiles. If a mostly silent source
+     * makes a percentile zero, fall back to the strongest positive sample.
+     * Fully silent or invalid audio has no usable reference.
+     */
+    fun reference(windows: List<AudioEnergyWindow>): AudioSignalReference? {
+        val valid = windows.filter { it.rms.isFinite() && it.peak.isFinite() && it.rms >= 0f && it.peak >= 0f }
+        if (valid.isEmpty()) return null
+        val rmsValues = valid.map { it.rms }.sorted()
+        val peakValues = valid.map { it.peak }.sorted()
+        val rmsPercentile = rmsValues.getOrNull(((rmsValues.size - 1) * 0.90).toInt()) ?: 0f
+        val peakPercentile = peakValues.getOrNull(((peakValues.size - 1) * 0.95).toInt()) ?: 0f
+        val rmsReference = if (rmsPercentile > 0f) rmsPercentile else rmsValues.filter { it > 0f }.maxOrNull() ?: 0f
+        val peakReference = if (peakPercentile > 0f) peakPercentile else peakValues.filter { it > 0f }.maxOrNull() ?: 0f
+        if (rmsReference <= 0f || peakReference <= 0f) return null
+        return AudioSignalReference(rmsReference, peakReference)
+    }
+
     fun score(
         startMs: Long,
         endMs: Long,

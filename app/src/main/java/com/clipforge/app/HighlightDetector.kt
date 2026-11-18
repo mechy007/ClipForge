@@ -91,10 +91,7 @@ object HighlightDetector {
         }.sortedBy { it.startMs }
         if (sorted.isEmpty()) return emptyList()
 
-        val audioReferenceRms = audioEnergy.map { it.rms }.filter { it.isFinite() }.sorted()
-            .let { values -> values.getOrNull(((values.size - 1) * 0.90).toInt()) ?: 0f }
-        val audioReferencePeak = audioEnergy.map { it.peak }.filter { it.isFinite() }.sorted()
-            .let { values -> values.getOrNull(((values.size - 1) * 0.95).toInt()) ?: 0f }
+        val audioReference = AudioSignalScorer.reference(audioEnergy)
 
         val windowMs = targetDurationMs.coerceIn(MIN_WINDOW_MS, MAX_WINDOW_MS)
         val stepMs = (windowMs / 3L).coerceAtLeast(5_000L)
@@ -113,13 +110,12 @@ object HighlightDetector {
                     val clipStart = insight.startMs.coerceIn(start, end - 1L)
                     val clipEnd = insight.endMs.coerceIn(clipStart + 1L, end)
                     val transcriptScore = weights.score(f)
-                    val audioScore = AudioSignalScorer.score(
-                        clipStart, clipEnd, audioEnergy, audioReferenceRms, audioReferencePeak
-                    )
-                    val combinedScore = if (audioEnergy.isEmpty()) transcriptScore
+                    val audioScore = audioReference?.let { reference ->
+                        AudioSignalScorer.score(clipStart, clipEnd, audioEnergy, reference.rms, reference.peak)
+                    }
+                    val combinedScore = if (audioScore == null) transcriptScore
                         else (transcriptScore * 0.82f + audioScore * 0.18f).toInt().coerceIn(0, 100)
-                    val audioReason = if (audioEnergy.isEmpty()) ""
-                        else " Audio activity signal: $audioScore/100."
+                    val audioReason = audioScore?.let { " Audio activity signal: $it/100." } ?: ""
                     candidates += ClipCandidate(
                         startMs = clipStart, endMs = clipEnd,
                         title = insight.suggestedTitle,

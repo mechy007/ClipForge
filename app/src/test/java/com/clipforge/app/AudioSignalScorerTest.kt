@@ -1,10 +1,30 @@
 package com.clipforge.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioSignalScorerTest {
+    @Test fun mostlySilentAudioUsesPositiveFallbackReference() {
+        val windows = (0 until 1_000).map { index ->
+            if (index < 950) AudioEnergyWindow(index * 1_000L, (index + 1) * 1_000L, 0f, 0f)
+            else AudioEnergyWindow(index * 1_000L, (index + 1) * 1_000L, 0.7f, 0.9f)
+        }
+        val reference = AudioSignalScorer.reference(windows)
+        assertNotNull(reference)
+        val activeScore = AudioSignalScorer.score(950_000L, 951_000L, windows, reference!!.rms, reference.peak)
+        assertTrue(activeScore > 0)
+    }
+
+    @Test fun fullySilentAudioHasNoUsableReference() {
+        val windows = (0 until 10).map { index ->
+            AudioEnergyWindow(index * 1_000L, (index + 1) * 1_000L, 0f, 0f)
+        }
+        assertNull(AudioSignalScorer.reference(windows))
+    }
+
     @Test fun emptyAudioReturnsNoSignal() {
         assertEquals(0, AudioSignalScorer.score(0, 10_000, emptyList(), 0.5f, 0.8f))
     }
