@@ -84,6 +84,8 @@ private fun ClipForgeHome() {
     }
     var message by remember { mutableStateOf("Import a video to discover its best moments.") }
     var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
+    var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
+    var pendingCaptionCues by remember { mutableStateOf<List<CaptionCue>?>(null) }
     var editing by remember { mutableStateOf<ClipCandidate?>(null) }
     var editStart by remember { mutableLongStateOf(0L) }
     var editEnd by remember { mutableLongStateOf(0L) }
@@ -94,7 +96,7 @@ private fun ClipForgeHome() {
         if (uri != null) {
             try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }
         }
-        video = uri; duration = 0L; clips = emptyList(); editing = null
+        video = uri; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); editing = null
         message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
@@ -105,11 +107,35 @@ private fun ClipForgeHome() {
                 onFinished = { _, result -> exportMessage = result; pending = null })
         } else { pending = null; if (dest == null) exportMessage = "Export cancelled." }
     }
+    val captionPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-subrip")) { dest ->
+        val cues = pendingCaptionCues
+        if (dest != null && cues != null) {
+            try {
+                val output = context.contentResolver.openOutputStream(dest, "w")
+                    ?: error("Could not open the selected subtitle save location.")
+                output.use { it.write(CaptionTrack.toSrt(cues).toByteArray(Charsets.UTF_8)) }
+                exportMessage = "Subtitles exported as SRT."
+            } catch (error: Exception) {
+                exportMessage = "Subtitle export failed: ${error.localizedMessage ?: "unknown error"}"
+            }
+        } else if (dest == null) {
+            exportMessage = "Subtitle export cancelled."
+        }
+        pendingCaptionCues = null
+    }
     fun save(clip: ClipCandidate) {
         pending = clip
-        savePicker.launch("ClipForge_\${clip.startMs / 1000}s.mp4")
+        savePicker.launch("ClipForge_${clip.startMs / 1000}s.mp4")
     }
-
+    fun saveCaptions(clip: ClipCandidate) {
+        val cues = CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs)
+        if (cues.isEmpty()) {
+            exportMessage = "No transcript captions are available for this clip."
+        } else {
+            pendingCaptionCues = cues
+            captionPicker.launch("ClipForge_${clip.startMs / 1000}s.srt")
+        }
+    }
     Surface(Modifier.fillMaxSize(), color = Ink) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -218,6 +244,7 @@ private fun ClipForgeHome() {
                                     currentPart = partMatch.groupValues[1].toIntOrNull() ?: currentPart
                                 }
                             })
+                            transcriptSegments = transcript
                             message = "Finding strong moments…"
                             val found = withContext(Dispatchers.Default) { HighlightDetector.detect(transcript, duration) }
                             clips = found
@@ -268,6 +295,7 @@ private fun ClipForgeHome() {
                             Text(clip.hook, color = Color(0xFFC7C6D1), fontSize = 11.sp, maxLines = 3)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { editing = clip; editStart = clip.startMs; editEnd = clip.endMs }, modifier = Modifier.weight(1f)) { Text("Edit") }
+                                OutlinedButton(onClick = { saveCaptions(clip) }, modifier = Modifier.weight(1f)) { Text("SRT") }
                                 Button(onClick = { save(clip) }, modifier = Modifier.weight(1f)) {
                                     Icon(Icons.Default.PlayArrow, null); Text("  Export")
                                 }
