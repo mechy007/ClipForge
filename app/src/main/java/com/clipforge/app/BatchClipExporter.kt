@@ -16,7 +16,7 @@ object BatchClipExporter {
         folder: Uri,
         source: Uri,
         clips: List<ClipCandidate>,
-        onProgress: (Int, Int, String) -> Unit = { _, _, _ -> }
+        onProgress: (Int, Int, ClipCandidate) -> Unit = { _, _, _ -> }
     ): Int {
         require(clips.isNotEmpty()) { "No highlights were selected." }
         val resolver = context.contentResolver
@@ -28,8 +28,8 @@ object BatchClipExporter {
             val safeTitle = clip.title.replace(Regex("[^A-Za-z0-9._-]+"), "_")
                 .trim('_').take(32).ifBlank { "Highlight" }
             val name = String.format(
-                Locale.US, "ClipForge_%02d_%s_%ds.mp4",
-                index + 1, safeTitle, clip.startMs / 1000L
+                Locale.US, "ClipForge_%ds-%ds_%s.mp4",
+                clip.startMs / 1000L, clip.endMs / 1000L, safeTitle
             )
             val destination = withContext(Dispatchers.IO) {
                 DocumentsContract.createDocument(resolver, parentDocument, "video/mp4", name)
@@ -71,7 +71,7 @@ object BatchClipExporter {
             }
 
             completed++
-            onProgress(completed, clips.size, clip.title)
+            onProgress(completed, clips.size, clip)
         }
         return completed
     }
