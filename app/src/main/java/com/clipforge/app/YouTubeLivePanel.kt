@@ -93,7 +93,7 @@ fun YouTubeLivePanel(
                                 val monitorStartedAtMs = System.currentTimeMillis()
                                 val startOffsetMs = (monitorStartedAtMs - session.actualStartTimeMs).coerceAtLeast(0L)
                                 val detector = LiveChatSpikeDetector(monitorStartOffsetMs = startOffsetMs)
-                                val seenIds = HashSet<String>()
+                                val seenIds = LinkedHashSet<String>()
                                 var pageToken: String? = null
                                 status = "Monitoring chat: ${session.title}"
                                 while (isActive) {
@@ -103,12 +103,19 @@ fun YouTubeLivePanel(
                                             seenIds.add(chatMessage.id)
                                         ) {
                                             detector.addMessage(chatMessage.publishedAtMs - session.actualStartTimeMs)
+                                            if (seenIds.size > 5_000) {
+                                                val oldest = seenIds.iterator()
+                                                if (oldest.hasNext()) {
+                                                    oldest.next()
+                                                    oldest.remove()
+                                                }
+                                            }
                                         }
                                     }
                                     val elapsedMs = System.currentTimeMillis() - session.actualStartTimeMs
                                     val newMarkers = detector.completeBucketsThrough(elapsedMs)
                                     if (newMarkers.isNotEmpty()) {
-                                        markers = markers + newMarkers
+                                        markers = (markers + newMarkers).takeLast(100)
                                         newMarkers.forEach(onMarker)
                                         status = "Found ${markers.size} live highlight marker(s)."
                                     }
