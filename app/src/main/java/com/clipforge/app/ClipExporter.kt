@@ -6,6 +6,9 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
+import java.util.Locale
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -44,6 +47,125 @@ object ClipExporter {
         }
     }
 
+    private fun exportFaceAware(
+        context: Context,
+        source: Uri,
+        destination: Uri,
+        startMs: Long,
+        endMs: Long,
+        path: List<CropFocus>,
+        captionCues: List<CaptionCue>,
+        captionPreset: CaptionPreset,
+        onStatus: (String) -> Unit,
+        onFinished: (Boolean, String) -> Unit
+    ) {
+        val input = File(context.cacheDir, "clipforge_source_${System.nanoTime()}.mp4")
+        val output = File(context.cacheDir, "clipforge_face_${System.nanoTime()}.mp4")
+        ioExecutor.execute {
+            try {
+                val sourceFile = if (source.scheme == "file") source.path?.let(::File) else null
+                if (sourceFile != null && sourceFile.isFile) {
+                    sourceFile.copyTo(input, overwrite = true)
+                } else {
+                    context.contentResolver.openInputStream(source)?.use { stream ->
+                        input.outputStream().buffered().use { target -> stream.copyTo(target) }
+                    } ?: error("Could not read the selected source video.")
+                }
+                check(input.isFile && input.length() > 0L) { "The source video is empty." }
+                val filter = buildFaceCropFilter(path, startMs, endMs)
+                val command = "-y -ss ${seconds(startMs)} -i ${quote(input.absolutePath)} " +
+                    "-t ${seconds(endMs - startMs)} -vf ${quote(filter)} " +
+                    "-map 0:v:0 -map 0:a? -c:v libx264 -preset ultrafast -crf 23 " +
+                    "-c:a aac -b:a 128k -movflags +faststart ${quote(output.absolutePath)}"
+                mainHandler.post { onStatus("Rendering face-aware vertical framing…") }
+                FFmpegKit.executeAsync(command) { session ->
+                    input.delete()
+                    if (!ReturnCode.isSuccess(session.returnCode) || !output.isFile || output.length() <= 0L) {
+                        output.delete()
+                        mainHandler.post {
+                            onFinished(false, "Face-aware export failed: ${session.failStackTrace ?: session.returnCode}")
+                        }
+                    } else {
+                        finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished)
+                    }
+                }
+            } catch (error: Exception) {
+                input.delete()
+                output.delete()
+                mainHandler.post {
+                    onFinished(false, "Could not prepare face-aware export: ${error.localizedMessage ?: "unknown error"}")
+                }
+            }
+        }
+    }
+
+    private fun finishRendered(
+        context: Context,
+        output: File,
+        destination: Uri,
+        captionCues: List<CaptionCue>,
+        captionPreset: CaptionPreset,
+        onStatus: (String) -> Unit,
+        onFinished: (Boolean, String) -> Unit
+    ) {
+        if (captionCues.isEmpty()) {
+            copyToDestination(context, output, destination, onFinished)
+        } else {
+            mainHandler.post { onStatus("Burning captions into the video…") }
+            val captioned = File(context.cacheDir, "clipforge_captioned_${System.currentTimeMillis()}.mp4")
+            CaptionBurnIn.render(context, output, captioned, captionCues, captionPreset) { success, message ->
+                if (!success) {
+                    output.delete()
+                    captioned.delete()
+                    mainHandler.post { onFinished(false, message) }
+                } else {
+                    copyToDestination(context, captioned, destination, onFinished, output)
+                }
+            }
+        }
+    }
+
+    internal fun buildFaceCropFilter(path: List<CropFocus>, startMs: Long, endMs: Long): String {
+        require(path.isNotEmpty() && endMs > startMs)
+        val clipDuration = (endMs - startMs) / 1000.0
+        val ordered = path.sortedBy { it.timeMs }
+        val before = ordered.lastOrNull { it.timeMs <= startMs } ?: ordered.first()
+        val inside = ordered.filter { it.timeMs in startMs..endMs }
+        val after = ordered.firstOrNull { it.timeMs >= endMs } ?: ordered.last()
+        val samples = (listOf(before) + inside + listOf(after))
+            .map { focus ->
+                ((focus.timeMs - startMs).coerceIn(0L, endMs - startMs) / 1000.0) to focus
+            }
+            .distinctBy { String.format(Locale.US, "%.3f", it.first) }
+            .sortedBy { it.first }
+        val width = ordered.first().width.coerceIn(0.05f, 1f)
+        val height = ordered.first().height.coerceIn(0.05f, 1f)
+        fun interpolate(selector: (CropFocus) -> Float): String {
+            if (samples.size == 1) return number(selector(samples.first().second))
+            var expression = number(selector(samples.last().second))
+            for (index in samples.size - 2 downTo 0) {
+                val (timeA, a) = samples[index]
+                val (timeB, b) = samples[index + 1]
+                val valueA = selector(a)
+                val valueB = selector(b)
+                val span = (timeB - timeA).coerceAtLeast(0.001)
+                val lerp = "${number(valueA)}+(${number(valueB - valueA)})*(t-${number(timeA.toFloat())})/${number(span.toFloat())}"
+                expression = "if(lt(t,${number(timeB.toFloat())}),$lerp,$expression)"
+            }
+            return expression
+        }
+        val centerX = interpolate { it.centerX }
+        val centerY = interpolate { it.centerY }
+        val x = "max(0,min(iw-ow,($centerX)*iw-ow/2))"
+        val y = "max(0,min(ih-oh,($centerY)*ih-oh/2))"
+        return "crop=w=iw*${number(width)}:h=ih*${number(height)}:x='$x':y='$y':eval=frame"
+    }
+
+    private fun seconds(milliseconds: Long): String = String.format(Locale.US, "%.3f", milliseconds / 1000.0)
+    private fun number(value: Float): String = String.format(Locale.US, "%.6f", value)
+    private fun number(value: Double): String = String.format(Locale.US, "%.6f", value)
+    private fun quote(value: String): String = "'" + value.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'") + "'"
+
     fun export(
         context: Context,
         source: Uri,
@@ -51,6 +173,7 @@ object ClipExporter {
         startMs: Long,
         endMs: Long,
         aspectRatio: Float = 9f / 16f,
+        faceTrackingPath: List<CropFocus> = emptyList(),
         captionCues: List<CaptionCue> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         onStatus: (String) -> Unit,
@@ -58,6 +181,14 @@ object ClipExporter {
     ) {
         if (startMs < 0L || endMs <= startMs) {
             onFinished(false, "Choose a valid trim range.")
+            return
+        }
+
+        if (faceTrackingPath.isNotEmpty()) {
+            exportFaceAware(
+                context, source, destination, startMs, endMs, faceTrackingPath,
+                captionCues, captionPreset, onStatus, onFinished
+            )
             return
         }
 
