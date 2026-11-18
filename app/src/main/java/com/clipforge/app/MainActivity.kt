@@ -73,10 +73,10 @@ class MainActivity : ComponentActivity() {
 private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    var video by remember(initialVideoUri) { mutableStateOf(initialVideoUri) }
+    var video by rememberSaveable(initialVideoUri) { mutableStateOf(initialVideoUri) }
     val projectDb = remember { ProjectDatabase(context) }
     var savedProjects by remember { mutableStateOf(projectDb.listProjects()) }
-    var activeProjectId by remember { mutableStateOf<Long?>(null) }
+    var activeProjectId by rememberSaveable { mutableStateOf<Long?>(null) }
     var savedProjectHighlights by remember { mutableStateOf<List<SavedHighlight>>(emptyList()) }
     var linkText by remember { mutableStateOf("") }
     var linkStatus by remember { mutableStateOf("") }
@@ -108,7 +108,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var selectedClips by remember { mutableStateOf<Set<ClipCandidate>>(emptySet()) }
     val batchStatus by BatchExportCoordinator.status.collectAsState()
     val batchExporting = batchStatus.running
-    var activeSection by remember { mutableStateOf("Studio") }
+    var activeSection by rememberSaveable { mutableStateOf("Studio") }
     var liveMarkers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
     var activeLiveSessionId by remember { mutableStateOf<Long?>(null) }
     var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
@@ -142,6 +142,17 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 ?: selected.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
                 ?: "Selected video"
         }
+    }
+
+    LaunchedEffect(activeProjectId) {
+        val projectId = activeProjectId ?: return@LaunchedEffect
+        val restored = withContext(Dispatchers.IO) {
+            projectDb.listHighlights(projectId) to projectDb.listTranscript(projectId)
+        }
+        savedProjectHighlights = restored.first
+        clips = restored.first.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score) }
+        transcriptSegments = restored.second
+        selectedClips = clips.toSet()
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
