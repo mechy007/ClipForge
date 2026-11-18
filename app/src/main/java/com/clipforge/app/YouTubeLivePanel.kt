@@ -4,6 +4,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -34,6 +37,7 @@ import kotlin.coroutines.coroutineContext
 @Composable
 fun YouTubeLivePanel(
     database: ProjectDatabase,
+    visible: Boolean = true,
     onMonitoringStarted: () -> Unit,
     onActiveSessionChanged: (Long?) -> Unit,
     onMarker: (LiveChatHighlightMarker) -> Unit,
@@ -67,7 +71,9 @@ fun YouTubeLivePanel(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(
+            if (visible) Modifier else Modifier.height(0.dp).clipToBounds().alpha(0f)
+        ),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF171720)),
         shape = RoundedCornerShape(20.dp)
     ) {
