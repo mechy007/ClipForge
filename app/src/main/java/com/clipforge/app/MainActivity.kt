@@ -556,6 +556,37 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
 
             }
+            if (activeSection == "Highlights" && transcriptSegments.isNotEmpty()) {
+                Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("TRANSCRIPT", color = Violet, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("${transcriptSegments.size} timestamped speech segments available", color = Muted, fontSize = 11.sp)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                                    clipboard?.setPrimaryClip(
+                                        android.content.ClipData.newPlainText(
+                                            "ClipForge transcript",
+                                            TranscriptTextExport.format(transcriptSegments)
+                                        )
+                                    )
+                                    exportMessage = if (clipboard != null) "Transcript copied to clipboard." else "Could not access the clipboard."
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Copy transcript")
+                            }
+                            Button(
+                                onClick = { transcriptPicker.launch("ClipForge_transcript.txt") },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Export TXT")
+                            }
+                        }
+                    }
+                }
+            }
             if (activeSection == "Highlights" && clips.isNotEmpty()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -564,31 +595,6 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                     TextButton(onClick = { selectedClips = if (selectedClips.size == clips.size) emptySet() else clips.toSet() }, enabled = !batchExporting) {
                         Text(if (selectedClips.size == clips.size) "Deselect all" else "Select all")
-                    }
-                }
-                if (transcriptSegments.isNotEmpty()) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
-                                clipboard?.setPrimaryClip(
-                                    android.content.ClipData.newPlainText(
-                                        "ClipForge transcript",
-                                        TranscriptTextExport.format(transcriptSegments)
-                                    )
-                                )
-                                exportMessage = if (clipboard != null) "Transcript copied to clipboard." else "Could not access the clipboard."
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Copy transcript")
-                        }
-                        Button(
-                            onClick = { transcriptPicker.launch("ClipForge_transcript.txt") },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Export TXT")
-                        }
                     }
                 }
                 Text("Export format", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
