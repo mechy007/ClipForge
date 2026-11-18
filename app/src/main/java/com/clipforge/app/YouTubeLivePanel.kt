@@ -41,7 +41,7 @@ fun YouTubeLivePanel(
     var markers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
     var monitorJob by remember { mutableStateOf<Job?>(null) }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(monitorJob) {
         onDispose { monitorJob?.cancel() }
     }
 
