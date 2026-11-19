@@ -112,7 +112,7 @@ fun MiniEditorWorkspace(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("EDIT WORKSPACE", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("EDIT WORKSPACE", color = timelineAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Text(sourceName.ifBlank { "Untitled video" }, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
             Text(formatEditorTime(durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
@@ -162,25 +162,27 @@ fun MiniEditorWorkspace(
         Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("TIMELINE · TRIM", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                val timelineAccent = MaterialTheme.colorScheme.primary
+                val timelineTrack = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)
                 Canvas(Modifier.fillMaxWidth().height(42.dp)) {
                     val trackY = size.height / 2f
                     val left = (start.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f) * size.width
                     val right = (end.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f) * size.width
                     val playhead = (playheadMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f) * size.width
                     drawLine(
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.65f),
+                        color = timelineTrack,
                         start = Offset(0f, trackY), end = Offset(size.width, trackY), strokeWidth = 9.dp.toPx()
                     )
                     drawLine(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                        color = timelineAccent.copy(alpha = 0.28f),
                         start = Offset(left, trackY), end = Offset(right, trackY), strokeWidth = 13.dp.toPx()
                     )
                     drawLine(
                         color = MaterialTheme.colorScheme.primary,
                         start = Offset(left, trackY), end = Offset(right, trackY), strokeWidth = 6.dp.toPx()
                     )
-                    drawCircle(MaterialTheme.colorScheme.primary, radius = 7.dp.toPx(), center = Offset(left, trackY))
-                    drawCircle(MaterialTheme.colorScheme.primary, radius = 7.dp.toPx(), center = Offset(right, trackY))
+                    drawCircle(timelineAccent, radius = 7.dp.toPx(), center = Offset(left, trackY))
+                    drawCircle(timelineAccent, radius = 7.dp.toPx(), center = Offset(right, trackY))
                     drawLine(
                         color = Color.White,
                         start = Offset(playhead, 3.dp.toPx()),
