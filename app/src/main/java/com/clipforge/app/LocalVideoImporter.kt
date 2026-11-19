@@ -3,6 +3,7 @@ package com.clipforge.app
 import android.content.Context
 import android.net.Uri
 import android.os.StatFs
+import android.webkit.MimeTypeMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -29,7 +30,16 @@ object LocalVideoImporter {
             "The selected file is not a supported video."
         }
         val directory = File(context.filesDir, "imports").apply { mkdirs() }
-        val target = File.createTempFile("local-", ".mp4", directory)
+        val suffix = when (mime) {
+            "video/mp4" -> ".mp4"
+            "video/quicktime" -> ".mov"
+            "video/x-matroska" -> ".mkv"
+            "video/webm" -> ".webm"
+            "video/3gpp" -> ".3gp"
+            else -> mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+                ?.takeIf { it.matches(Regex("[a-zA-Z0-9]{1,8}")) }?.let { ".$it" } ?: ".video"
+        }
+        val target = File.createTempFile("local-", suffix, directory)
         val partial = File(directory, target.name + ".part")
         target.delete()
         try {
@@ -48,6 +58,10 @@ object LocalVideoImporter {
                         val count = stream.read(buffer)
                         if (count < 0) break
                         if (count == 0) continue
+                        val free = StatFs(directory.absolutePath).availableBytes
+                        check(free > count.toLong() + 1024L * 1024L) {
+                            "Not enough free storage to finish importing this video."
+                        }
                         copied += count.toLong()
                         output.write(buffer, 0, count)
                         onProgress(LocalImportProgress(copied, size))
