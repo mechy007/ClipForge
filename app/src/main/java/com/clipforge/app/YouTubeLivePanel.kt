@@ -46,6 +46,10 @@ fun YouTubeLivePanel(
 ) {
     val scope = rememberCoroutineScope()
     val api = remember { YouTubeLiveApiClient() }
+    var discoveryQuery by remember { mutableStateOf("GTA 6") }
+    var discoveredStreams by remember { mutableStateOf<List<DiscoveredLiveStream>>(emptyList()) }
+    var discoveryStatus by remember { mutableStateOf("Search active YouTube livestreams by game or topic.") }
+    var discoveryBusy by remember { mutableStateOf(false) }
     var videoInput by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     val restoredSession = remember { database.listLiveSessions().firstOrNull() }
@@ -115,6 +119,69 @@ fun YouTubeLivePanel(
             )
             Text(
                 "Use a restricted key from your Google Cloud project. The key stays in memory for this screen and is not saved by ClipForge. Markers use broadcast-relative timestamps; compare them with your imported recording and verify the offset before exporting. Only process footage you own or are authorised to use.",
+                color = ClipForgePalette.Muted,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text("STREAM SCOUT", color = ClipForgePalette.Accent, fontWeight = FontWeight.Bold)
+            Text(
+                "Find currently live YouTube streams. GTA 6 is prefilled; change the search for another game or topic.",
+                color = ClipForgePalette.Muted,
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedTextField(
+                value = discoveryQuery,
+                onValueChange = { discoveryQuery = it },
+                enabled = !discoveryBusy,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Game or topic") },
+                singleLine = true
+            )
+            Button(
+                onClick = {
+                    scope.launch {
+                        discoveryBusy = true
+                        discoveryStatus = "Searching live streams…"
+                        try {
+                            discoveredStreams = YouTubeStreamDiscoveryClient(apiKey).searchLiveStreams(discoveryQuery)
+                            discoveryStatus = if (discoveredStreams.isEmpty()) {
+                                "No active streams found for this search."
+                            } else {
+                                "Found " + discoveredStreams.size + " active stream(s). Select one to monitor its public chat."
+                            }
+                        } catch (error: Exception) {
+                            discoveryStatus = error.localizedMessage ?: "Stream discovery failed."
+                        } finally {
+                            discoveryBusy = false
+                        }
+                    }
+                },
+                enabled = !discoveryBusy && discoveryQuery.isNotBlank() && apiKey.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (discoveryBusy) "Searching…" else "Find live streams")
+            }
+            Text(discoveryStatus, color = ClipForgePalette.Muted, style = MaterialTheme.typography.bodySmall)
+            discoveredStreams.take(8).forEach { stream ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(stream.title, color = ClipForgePalette.Text, fontWeight = FontWeight.SemiBold)
+                        val viewers = stream.viewerCount?.let { it.toString() + " viewers" } ?: "Viewer count unavailable"
+                        Text(stream.channelName + " · " + viewers, color = ClipForgePalette.Muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Button(
+                        onClick = {
+                            videoInput = stream.watchUrl
+                            status = "Selected " + stream.channelName + ". Connect and monitor its public chat below."
+                        }
+                    ) { Text("Use") }
+                }
+            }
+            Text(
+                "YouTube search is quota-limited. Refresh only when needed. Stream discovery finds public live listings; it does not capture or download playback.",
                 color = ClipForgePalette.Muted,
                 style = MaterialTheme.typography.bodySmall
             )
