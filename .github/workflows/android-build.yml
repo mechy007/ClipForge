@@ -84,7 +84,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: gradle :app:connectedDebugAndroidTest --stacktrace
+          script: gradle :app:connectedDebugAndroidTest -PclipforgeEmulatorTest=true --stacktrace
       - name: Upload instrumentation reports
         if: always()
         uses: actions/upload-artifact@v4
