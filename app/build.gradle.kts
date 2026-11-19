@@ -96,6 +96,7 @@ android {
         applicationId = "com.clipforge.app"
         minSdk = 26
         targetSdk = 35
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = 7
         versionName = "0.6.2"
         ndk { abiFilters += listOf("arm64-v8a") }
