@@ -16,9 +16,9 @@ object CaptionBurnIn {
         output: File,
         cues: List<CaptionCue>,
         preset: CaptionPreset = CaptionPreset.CLEAN,
-        onFinished: (Boolean, String) -> Unit,
         alignedWords: List<TimedWord> = emptyList(),
-        clipDurationMs: Long = 0L
+        clipDurationMs: Long = 0L,
+        onFinished: (Boolean, String) -> Unit
     ) {
         val wordAligned = alignedWords.isNotEmpty() && clipDurationMs > 0L
         val subtitle = File(context.cacheDir, "captions_${System.nanoTime()}.${if (wordAligned) "ass" else "srt"}")
