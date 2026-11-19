@@ -54,7 +54,8 @@ object VideoTranscriber {
             WhisperEngine.beginSession(context)
             onStatus("Starting on-device transcription…")
 
-            val transcript = mutableListOf<TranscriptSegment>()
+            val checkpoint = TranscriptCheckpoint.forVideo(context, videoUri, language)
+            onStatus("Resuming any previously completed transcription chunks…")
             DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
                 val chunk = FloatArray(CHUNK_SAMPLES)
                 var chunkIndex = 0
@@ -72,22 +73,24 @@ object VideoTranscriber {
                     }
                     if (count == 0) break
 
-                    onStatus("Transcribing audio · part " + (chunkIndex + 1))
-                    val audio = if (count == chunk.size) chunk else chunk.copyOf(count)
-                    val offsetMs = chunkIndex.toLong() * CHUNK_SECONDS * 1000L
-                    val segments = WhisperEngine.transcribe16Khz(context, audio, language)
-                    transcript += segments.map { segment ->
-                        segment.copy(
-                            startMs = segment.startMs + offsetMs,
-                            endMs = segment.endMs + offsetMs
-                        )
-                    }
+                    if (!checkpoint.hasChunk(chunkIndex)) {
+                        onStatus("Transcribing audio · part " + (chunkIndex + 1))
+                        val audio = if (count == chunk.size) chunk else chunk.copyOf(count)
+                        val offsetMs = chunkIndex.toLong() * CHUNK_SECONDS * 1000L
+                        val segments = WhisperEngine.transcribe16Khz(context, audio, language)
+                        checkpoint.save(chunkIndex, segments.map { segment ->
+                            segment.copy(
+                                startMs = segment.startMs + offsetMs,
+                                endMs = segment.endMs + offsetMs
+                            )
+                        })
+                    } else onStatus("Restored transcription · part " + (chunkIndex + 1))
                     chunkIndex++
                 }
             }
 
             TranscriptionResult(
-                segments = transcript.sortedBy { it.startMs },
+                segments = checkpoint.segments(),
                 audioEnergy = audioEnergy
             )
         } finally {
