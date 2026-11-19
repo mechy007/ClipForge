@@ -235,6 +235,40 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         video = uri; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null; editing = null
         message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
+    var localImportBusy by remember { mutableStateOf(false) }
+    var localImportStatus by remember { mutableStateOf("") }
+    val offlineImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !localImportBusy) {
+            localImportBusy = true
+            localImportStatus = "Copying video into offline project storage…"
+            scope.launch {
+                try {
+                    val imported = LocalVideoImporter.import(context, uri) { progress ->
+                        val percent = progress.totalBytes?.takeIf { it > 0L }
+                            ?.let { (progress.copiedBytes * 100L / it).coerceIn(0L, 100L) }
+                        scope.launch {
+                            localImportStatus = percent?.let { "Importing video · $it%" }
+                                ?: "Importing video · ${progress.copiedBytes / (1024L * 1024L)} MB"
+                        }
+                    }
+                    video = imported
+                    duration = 0L
+                    clips = emptyList()
+                    transcriptSegments = emptyList()
+                    activeProjectId = null
+                    editing = null
+                    message = "Offline video imported. Ready for resumable AI transcription."
+                    localImportStatus = "Offline video imported successfully."
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    localImportStatus = e.localizedMessage ?: "Offline video import failed."
+                } finally {
+                    localImportBusy = false
+                }
+            }
+        }
+    }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
         val src = video; val clip = pending
         if (dest != null && src != null && clip != null) {
@@ -683,6 +717,16 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     Text("Podcasts, gameplay, interviews and more. Choose a video stored on your phone.", color = Muted, fontSize = 12.sp)
                     Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
                         Icon(Icons.Default.FolderOpen, null); Text(if (video == null) "  Import video" else "  Change video")
+                    }
+                    OutlinedButton(
+                        onClick = { offlineImportPicker.launch(arrayOf("video/*")) },
+                        enabled = !localImportBusy && !analyzing,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (localImportBusy) "Copying offline video…" else "Copy video for reliable offline access")
+                    }
+                    if (localImportStatus.isNotBlank()) {
+                        Text(localImportStatus, color = Muted, fontSize = 11.sp)
                     }
                 }
             }
