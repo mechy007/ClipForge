@@ -84,7 +84,18 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: gradle :app:connectedDebugAndroidTest -PclipforgeEmulatorTest=true --stacktrace
+          script: |
+            gradle :app:connectedDebugAndroidTest -PclipforgeEmulatorTest=true --stacktrace
+            # Smoke-check the installed app process, not just instrumentation tests.
+            adb shell am force-stop com.clipforge.app || true
+            adb logcat -c
+            adb shell monkey -p com.clipforge.app -c android.intent.category.LAUNCHER 1
+            sleep 8
+            adb shell pidof com.clipforge.app | grep -E '[0-9]+' || {
+              echo "ClipForge did not remain running after launch"
+              adb logcat -d -t 300
+              exit 1
+            }
       - name: Upload instrumentation reports
         if: always()
         uses: actions/upload-artifact@v4
