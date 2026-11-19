@@ -16,13 +16,16 @@ object CaptionBurnIn {
         output: File,
         cues: List<CaptionCue>,
         preset: CaptionPreset = CaptionPreset.CLEAN,
-        onFinished: (Boolean, String) -> Unit
+        onFinished: (Boolean, String) -> Unit,
+        alignedWords: List<TimedWord> = emptyList(),
+        clipDurationMs: Long = 0L
     ) {
-        val subtitle = File(context.cacheDir, "captions_${System.nanoTime()}.srt")
+        val wordAligned = alignedWords.isNotEmpty() && clipDurationMs > 0L
+        val subtitle = File(context.cacheDir, "captions_${System.nanoTime()}.${if (wordAligned) "ass" else "srt"}")
         try {
             require(input.isFile && input.length() > 0L) { "Input video is missing or empty." }
-            require(cues.isNotEmpty()) { "There are no captions to burn in." }
-            subtitle.writeText(CaptionTrack.toSrt(cues), Charsets.UTF_8)
+            require(cues.isNotEmpty() || wordAligned) { "There are no captions to burn in." }
+            subtitle.writeText(if (wordAligned) AssKaraokeTrack.render(alignedWords, clipDurationMs) else CaptionTrack.toSrt(cues), Charsets.UTF_8)
             val style = when (preset) {
                 CaptionPreset.CLEAN -> "FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48"
                 CaptionPreset.BOLD -> "FontName=Arial,FontSize=22,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=52"
