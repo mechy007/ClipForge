@@ -9,9 +9,9 @@ import android.content.Context
 internal interface OfflineSpeechBackend {
     val id: String
     suspend fun prepare(context: Context)
-    fun begin(context: Context)
-    fun transcribe(context: Context, pcm16Khz: FloatArray, language: String?): List<TranscriptSegment>
-    fun close()
+    suspend fun begin(context: Context)
+    suspend fun transcribe(context: Context, pcm16Khz: FloatArray, language: String?): List<TranscriptSegment>
+    suspend fun close()
 }
 
 internal object BundledWhisperBackend : OfflineSpeechBackend {
@@ -19,10 +19,10 @@ internal object BundledWhisperBackend : OfflineSpeechBackend {
     override suspend fun prepare(context: Context) {
         WhisperModelManager.ensureModel(context) { _, _ -> }
     }
-    override fun begin(context: Context) = WhisperEngine.beginSession(context)
-    override fun transcribe(context: Context, pcm16Khz: FloatArray, language: String?) =
+    override suspend fun begin(context: Context) = WhisperEngine.beginSession(context)
+    override suspend fun transcribe(context: Context, pcm16Khz: FloatArray, language: String?) =
         WhisperEngine.transcribe16Khz(context, pcm16Khz, language)
-    override fun close() = WhisperEngine.endSession()
+    override suspend fun close() = WhisperEngine.endSession()
 }
 
 /** Only audited, bundled, on-device implementations may be registered here. */
