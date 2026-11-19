@@ -112,7 +112,7 @@ fun MiniEditorWorkspace(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("EDIT WORKSPACE", color = timelineAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("EDIT WORKSPACE", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Text(sourceName.ifBlank { "Untitled video" }, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
             Text(formatEditorTime(durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
