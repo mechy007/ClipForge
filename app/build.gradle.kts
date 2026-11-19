@@ -111,6 +111,7 @@ android {
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
+    packaging.jniLibs.useLegacyPackaging = true
     buildFeatures { compose = true }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     sourceSets.getByName("main").assets.srcDir(whisperAssetDirectory)
@@ -132,6 +133,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
+    implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.9")
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("com.google.android.gms:play-services-tasks:18.2.0")

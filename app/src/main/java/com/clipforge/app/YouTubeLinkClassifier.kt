@@ -17,5 +17,5 @@ object YouTubeLinkClassifier {
     }
 
     fun importGuidance(): String =
-        "YouTube links are watch pages, not direct MP4/WebM files. ClipForge cannot download YouTube playback. For a live broadcast, use Live to monitor chat and find highlight timestamps. For a video you own or are authorised to use, export/download it through YouTube Studio or your original editor, save it to your phone, then choose Import video."
+        "For recorded videos, paste the YouTube link in Studio and choose Download and clip. For an active broadcast, use Live to monitor chat and mark highlights."
 }

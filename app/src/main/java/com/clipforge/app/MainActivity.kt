@@ -90,6 +90,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var linkText by remember { mutableStateOf("") }
     var pendingYoutubeUrl by rememberSaveable { mutableStateOf("") }
     var linkStatus by remember { mutableStateOf("") }
+    var youtubeQuality by rememberSaveable { mutableStateOf(1080) }
     var importingLink by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(0L) }
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
@@ -515,24 +516,43 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
             }
             if (activeSection == "Studio") {
-            OutlinedTextField(value = linkText, onValueChange = { linkText = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Direct video file URL (MP4/WebM/MOV/MKV)") }, singleLine = true)
-            Text("YouTube watch links cannot be imported as video files here. Import a video file you own or are authorised to use. Live chat tools are separate.", color = Muted, fontSize = 10.sp)
-            OutlinedButton(onClick = {
-                scope.launch {
-                    if (YouTubeLinkClassifier.isYouTubeUrl(linkText)) {
-                        linkStatus = YouTubeLinkClassifier.importGuidance()
-                        return@launch
+            val youtubeLink = YouTubeLinkClassifier.isYouTubeUrl(linkText)
+            OutlinedTextField(value = linkText, onValueChange = { linkText = it }, enabled = !importingLink,
+                modifier = Modifier.fillMaxWidth(), label = { Text("YouTube or direct video URL") }, singleLine = true)
+            if (youtubeLink) {
+                Text("Maximum download quality", color = Muted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(720, 1080, 2160).forEach { height ->
+                        FilterChip(selected = youtubeQuality == height, onClick = { youtubeQuality = height },
+                            enabled = !importingLink, label = { Text("${height}p") })
                     }
-                    importingLink = true; linkStatus = "Checking direct video link…"
+                }
+            }
+            OutlinedButton(onClick = {
+                val url = linkText.trim()
+                importingLink = true
+                linkStatus = if (youtubeLink) "Preparing YouTube download…" else "Checking direct video link…"
+                scope.launch {
                     try {
-                        val imported = DirectVideoImporter.download(context, linkText) { p ->
-                            if (p.downloadedBytes % (1024L * 1024L) < 64L * 1024L) scope.launch { linkStatus = if (p.totalBytes != null) "Downloaded ${p.downloadedBytes / 1_048_576} / ${p.totalBytes / 1_048_576} MB" else "Downloaded ${p.downloadedBytes / 1_048_576} MB" }
+                        val imported = if (youtubeLink) {
+                            YouTubeVideoImporter.download(context, url, youtubeQuality) { percent ->
+                                scope.launch { linkStatus = "Downloading and preparing video · $percent%" }
+                            }
+                        } else DirectVideoImporter.download(context, url) { p ->
+                            if (p.downloadedBytes % (1024L * 1024L) < 64L * 1024L) scope.launch { linkStatus = "Downloaded ${p.downloadedBytes / 1_048_576} MB" }
                         }
-                        video = imported; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null; linkStatus = "Video imported. Preview it and run AI analysis."
+                        video = imported; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null
+                        editing = null
+                        linkStatus = "Video imported."
+                        if (youtubeLink) activeSection = "Editor"
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Exception) { linkStatus = e.localizedMessage ?: "Video import failed." }
                     finally { importingLink = false }
                 }
-            }, enabled = linkText.isNotBlank() && !importingLink, modifier = Modifier.fillMaxWidth()) { Text(if (importingLink) "Importing video…" else "Import from direct link") }
+            }, enabled = linkText.isNotBlank() && !importingLink && !analyzing, modifier = Modifier.fillMaxWidth()) {
+                Text(if (importingLink) "Importing video…" else if (youtubeLink) "Download and clip" else "Import from direct link")
+            }
             if (linkStatus.isNotBlank()) Text(linkStatus, color = Muted, fontSize = 11.sp)
             }
             if (activeSection == "Projects") {

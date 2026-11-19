@@ -157,7 +157,7 @@ class YouTubeLiveApiClient(
                 }
                 val host = uri.host?.lowercase().orEmpty()
                 require(host == "youtube.com" || host == "www.youtube.com" ||
-                    host == "m.youtube.com" || host == "youtu.be") {
+                    host == "m.youtube.com" || host == "music.youtube.com" || host == "youtu.be") {
                     "Only YouTube video links are supported."
                 }
                 val pathSegments = uri.path.orEmpty().split('/').filter { it.isNotBlank() }

@@ -33,6 +33,7 @@ object ClipExporter {
     ) {
         ioExecutor.execute {
             try {
+                check(source.isFile && source.length() > 0L) { "The render did not produce a video." }
                 val stream = context.contentResolver.openOutputStream(destination, "w")
                     ?: error("Could not open the selected save location.")
                 stream.use { target -> source.inputStream().use { it.copyTo(target) } }
@@ -72,17 +73,23 @@ object ClipExporter {
                 }
                 check(input.isFile && input.length() > 0L) { "The source video is empty." }
                 val filter = FaceCropFilterBuilder.build(path, startMs, endMs)
-                val command = "-y -ss ${seconds(startMs)} -i ${quote(input.absolutePath)} " +
-                    "-t ${seconds(endMs - startMs)} -vf ${quote(filter)} " +
-                    "-map 0:v:0 -map 0:a? -c:v libx264 -preset ultrafast -crf 23 " +
-                    "-c:a aac -b:a 128k -movflags +faststart ${quote(output.absolutePath)}"
-                mainHandler.post { onStatus("Rendering face-aware vertical framing…") }
-                FFmpegKit.executeAsync(command) { session ->
+                val arguments = arrayOf(
+                    "-y", "-loglevel", "error",
+                    "-ss", seconds(startMs), "-i", input.absolutePath,
+                    "-t", seconds(endMs - startMs), "-vf", filter,
+                    "-map", "0:v:0", "-map", "0:a?",
+                    "-c:v", "libopenh264", "-b:v", "4M", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output.absolutePath
+                )
+                mainHandler.post { onStatus("Rendering face-aware framing…") }
+                FFmpegKit.executeWithArgumentsAsync(arguments) { session ->
                     if (existingSource == null) input.delete()
                     if (!ReturnCode.isSuccess(session.returnCode) || !output.isFile || output.length() <= 0L) {
                         output.delete()
+                        val detail = session.output?.trim()?.takeIf { it.isNotEmpty() }
+                            ?: session.failStackTrace ?: "No video was produced (FFmpeg ${session.returnCode})."
                         mainHandler.post {
-                            onFinished(false, "Face-aware export failed: ${session.failStackTrace ?: session.returnCode}")
+                            onFinished(false, "Face-aware export failed: $detail")
                         }
                     } else {
                         finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished)
@@ -111,7 +118,7 @@ object ClipExporter {
             copyToDestination(context, output, destination, onFinished)
         } else {
             mainHandler.post { onStatus("Burning captions into the video…") }
-            val captioned = File(context.cacheDir, "clipforge_captioned_${System.currentTimeMillis()}.mp4")
+            val captioned = File(context.cacheDir, "clipforge_captioned_${System.nanoTime()}.mp4")
             CaptionBurnIn.render(context, output, captioned, captionCues, captionPreset) { success, message ->
                 if (!success) {
                     output.delete()
@@ -125,7 +132,6 @@ object ClipExporter {
     }
 
     private fun seconds(milliseconds: Long): String = String.format(Locale.US, "%.3f", milliseconds / 1000.0)
-    private fun quote(value: String): String = "'" + value.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'") + "'"
 
     fun export(
         context: Context,
@@ -153,7 +159,7 @@ object ClipExporter {
             return
         }
 
-        val output = File(context.cacheDir, "clipforge_${System.currentTimeMillis()}.mp4")
+        val output = File(context.cacheDir, "clipforge_${System.nanoTime()}.mp4")
         val clippedItem = MediaItem.Builder()
             .setUri(source)
             .setClippingConfiguration(
@@ -174,21 +180,7 @@ object ClipExporter {
         val transformer = Transformer.Builder(context)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    if (captionCues.isEmpty()) {
-                        copyToDestination(context, output, destination, onFinished)
-                    } else {
-                        mainHandler.post { onStatus("Burning captions into the video…") }
-                        val captioned = File(context.cacheDir, "clipforge_captioned_${System.currentTimeMillis()}.mp4")
-                        CaptionBurnIn.render(context, output, captioned, captionCues, captionPreset) { success, message ->
-                            if (!success) {
-                                output.delete()
-                                captioned.delete()
-                                mainHandler.post { onFinished(false, message) }
-                            } else {
-                                copyToDestination(context, captioned, destination, onFinished, output)
-                            }
-                        }
-                    }
+                    finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished)
                 }
 
                 override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
