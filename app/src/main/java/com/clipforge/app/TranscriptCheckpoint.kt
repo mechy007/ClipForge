@@ -3,6 +3,7 @@ package com.clipforge.app
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.provider.DocumentsContract
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -62,9 +63,27 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
 
     companion object {
         fun forVideo(context: Context, uri: Uri, language: String?): TranscriptCheckpoint {
-            val metadata = context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
-                ?.use { cursor -> if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0).toString() else "unknown" }
-                ?: "unknown"
+            // Invalidate cached chunks when a video is replaced at the same URI.
+            val metadata = if (uri.scheme == "file") {
+                val source = File(requireNotNull(uri.path))
+                "${source.length()}|${source.lastModified()}"
+            } else {
+                runCatching {
+                    context.contentResolver.query(
+                        uri,
+                        arrayOf(OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                        null, null, null
+                    )?.use { cursor ->
+                        if (!cursor.moveToFirst()) null else {
+                            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                            val timeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                            val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) cursor.getLong(sizeIndex).toString() else "unknown"
+                            val time = if (timeIndex >= 0 && !cursor.isNull(timeIndex)) cursor.getLong(timeIndex).toString() else "unknown"
+                            "$size|$time"
+                        }
+                    }
+                }.getOrNull() ?: "unknown|unknown"
+            }
             val identity = "${uri}|${language.orEmpty()}|$metadata|whisper-tiny-v1"
             val digest = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
                 .joinToString("") { "%02x".format(it) }
