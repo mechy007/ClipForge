@@ -40,18 +40,19 @@ object VideoTranscriber {
         onStatus: (String) -> Unit = {}
     ): TranscriptionResult = withContext(Dispatchers.IO) {
         val pcmFile = File(context.cacheDir, "clipforge-audio-" + System.nanoTime() + ".pcm")
-        var whisperSessionStarted = false
+        val backend = OfflineSpeechBackends.default
+        var sessionStarted = false
         try {
             onStatus("Preparing the bundled offline speech model…")
-            WhisperModelManager.ensureModel(context) { _, _ -> }
+            backend.prepare(context)
             onStatus("Decoding video audio on this device…")
             val audioEnergy = mutableListOf<AudioEnergyWindow>()
             AudioPcmExtractor.decodeToMono16Khz(context, videoUri, pcmFile) { window ->
                 audioEnergy += window
             }
 
-            whisperSessionStarted = true
-            WhisperEngine.beginSession(context)
+            backend.begin(context)
+            sessionStarted = true
             onStatus("Starting on-device transcription…")
 
             val transcript = mutableListOf<TranscriptSegment>()
@@ -75,7 +76,7 @@ object VideoTranscriber {
                     onStatus("Transcribing audio · part " + (chunkIndex + 1))
                     val audio = if (count == chunk.size) chunk else chunk.copyOf(count)
                     val offsetMs = chunkIndex.toLong() * CHUNK_SECONDS * 1000L
-                    val segments = WhisperEngine.transcribe16Khz(context, audio, language)
+                    val segments = backend.transcribe(context, audio, language)
                     transcript += segments.map { segment ->
                         segment.copy(
                             startMs = segment.startMs + offsetMs,
@@ -91,7 +92,7 @@ object VideoTranscriber {
                 audioEnergy = audioEnergy
             )
         } finally {
-            if (whisperSessionStarted) WhisperEngine.endSession()
+            if (sessionStarted) backend.close()
             pcmFile.delete()
         }
     }
