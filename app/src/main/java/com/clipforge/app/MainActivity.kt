@@ -95,6 +95,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var duration by remember { mutableLongStateOf(0L) }
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var transcriptLanguage by rememberSaveable { mutableStateOf("auto") }
+    var geminiApiKey by remember { mutableStateOf("") }
+    var geminiModel by rememberSaveable { mutableStateOf("gemini-2.5-flash-lite") }
+    var useGemini by rememberSaveable { mutableStateOf(true) }
     var targetClipDurationMs by rememberSaveable { mutableLongStateOf(30_000L) }
     var languageMenuExpanded by remember { mutableStateOf(false) }
     var preparingModel by remember { mutableStateOf(false) }
@@ -769,6 +772,30 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                 }
                 Text("AI searches for moments around this length and keeps speech boundaries inside the selected range.", color = Muted, fontSize = 11.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = useGemini, onCheckedChange = { useGemini = it }, enabled = !analyzing)
+                    Text("Gemini-first highlight ranking (sends transcript excerpts to Google)", fontSize = 12.sp)
+                }
+                if (useGemini) {
+                    OutlinedTextField(
+                        value = geminiApiKey,
+                        onValueChange = { geminiApiKey = it.trim() },
+                        label = { Text("Gemini API key (session only)") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !analyzing
+                    )
+                    OutlinedTextField(
+                        value = geminiModel,
+                        onValueChange = { geminiModel = it.trim() },
+                        label = { Text("Gemini model ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !analyzing
+                    )
+                    Text("Your key stays in app memory and is not saved. Offline Whisper still transcribes audio; Gemini ranks transcript candidates. Requires an API key and internet.", color = Muted, fontSize = 11.sp)
+                }
                 Button(onClick = {
                     val src = video ?: return@Button
                     scope.launch {
@@ -800,9 +827,18 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 "Face-aware framing ready · ${faceTrackingPath.size} tracked moments."
                             }
                             message = "Ranking speech, silence and scene changes…"
-                            val found = withContext(Dispatchers.Default) {
+                            val offlineCandidates = withContext(Dispatchers.Default) {
                                 HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts)
                             }
+                            val found = if (useGemini && geminiApiKey.isNotBlank()) {
+                                message = "Gemini is ranking transcript highlights…"
+                                try {
+                                    GeminiHighlightRanker.rank(geminiApiKey, geminiModel, offlineCandidates)
+                                } catch (error: Exception) {
+                                    message = "Gemini unavailable; using offline highlights."
+                                    offlineCandidates
+                                }
+                            } else offlineCandidates
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
                                 val id = existingProjectId ?: projectDb.saveProject(
