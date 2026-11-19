@@ -18,10 +18,10 @@ object CaptionBurnIn {
         preset: CaptionPreset = CaptionPreset.CLEAN,
         onFinished: (Boolean, String) -> Unit
     ) {
-        require(input.isFile && input.length() > 0L) { "Input video is missing or empty." }
-        require(cues.isNotEmpty()) { "There are no captions to burn in." }
-        val subtitle = File(context.cacheDir, "captions_${System.currentTimeMillis()}.srt")
+        val subtitle = File(context.cacheDir, "captions_${System.nanoTime()}.srt")
         try {
+            require(input.isFile && input.length() > 0L) { "Input video is missing or empty." }
+            require(cues.isNotEmpty()) { "There are no captions to burn in." }
             subtitle.writeText(CaptionTrack.toSrt(cues), Charsets.UTF_8)
             val style = when (preset) {
                 CaptionPreset.CLEAN -> "FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48"
@@ -29,12 +29,17 @@ object CaptionBurnIn {
                 CaptionPreset.KARAOKE -> "FontName=Arial,FontSize=21,Bold=1,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2,MarginV=52"
                 CaptionPreset.BOXED -> "FontName=Arial,FontSize=19,Bold=1,PrimaryColour=&H00FFFFFF,BackColour=&H90000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=48"
             }
-            val command = buildCommand(input.absolutePath, subtitle.absolutePath, output.absolutePath, style)
-            FFmpegKit.executeAsync(command) { session ->
+            val arguments = buildArguments(input.absolutePath, subtitle.absolutePath, output.absolutePath, style)
+            FFmpegKit.executeWithArgumentsAsync(arguments) { session ->
                 subtitle.delete()
-                val success = ReturnCode.isSuccess(session.returnCode)
-                onFinished(success, if (success) "Captions burned into video." else
-                    "Caption rendering failed: ${session.failStackTrace ?: session.returnCode}")
+                val success = ReturnCode.isSuccess(session.returnCode) && output.isFile && output.length() > 0L
+                if (success) {
+                    onFinished(true, "Captions burned into video.")
+                } else {
+                    val detail = session.output?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: session.failStackTrace ?: "No video was produced (FFmpeg ${session.returnCode})."
+                    onFinished(false, "Caption rendering failed: $detail")
+                }
             }
         } catch (error: Exception) {
             subtitle.delete()
@@ -42,10 +47,23 @@ object CaptionBurnIn {
         }
     }
 
-    internal fun buildCommand(input: String, subtitle: String, output: String, style: String): String {
-        fun quote(value: String) = "'" + value.replace("\\", "\\\\")
-            .replace(":", "\\:").replace("'", "\\'") + "'"
-        val filter = "subtitles=filename=${quote(subtitle)}:force_style=${quote(style)}"
-        return "-y -i ${quote(input)} -vf ${quote(filter)} -c:v libx264 -preset ultrafast -crf 23 -c:a copy ${quote(output)}"
+    internal fun buildArguments(input: String, subtitle: String, output: String, style: String): Array<String> {
+        fun escape(value: String, specialCharacters: String) = buildString {
+            for (character in value) {
+                if (character in specialCharacters) append('\\')
+                append(character)
+            }
+        }
+
+        // FFmpeg parses filtergraph separators, then parses each filter's options.
+        fun filterOption(value: String) = escape(escape(value, "\\':"), "\\'[],;")
+
+        val filter = "subtitles=filename=${filterOption(subtitle)}:fontsdir=/system/fonts:force_style=${filterOption(style)}," +
+            "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+        return arrayOf(
+            "-y", "-loglevel", "error", "-i", input, "-vf", filter,
+            "-c:v", "libopenh264", "-b:v", "4M", "-pix_fmt", "yuv420p",
+            "-c:a", "copy", "-movflags", "+faststart", output
+        )
     }
 }

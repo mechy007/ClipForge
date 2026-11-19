@@ -36,7 +36,10 @@ object FaceCropFilterBuilder {
         val centerY = interpolate { it.centerY }
         val x = "max(0,min(iw-ow,($centerX)*iw-ow/2))"
         val y = "max(0,min(ih-oh,($centerY)*ih-oh/2))"
-        return "crop=w=iw*${number(width)}:h=ih*${number(height)}:x='$x':y='$y':eval=frame"
+        val cropWidth = "max(2,trunc(iw*${number(width)}/2)*2)"
+        val cropHeight = "max(2,trunc(ih*${number(height)}/2)*2)"
+        // FFmpeg evaluates the crop's x and y expressions for every frame.
+        return "crop=w='$cropWidth':h='$cropHeight':x='$x':y='$y'"
     }
 
     private fun number(value: Float): String = String.format(Locale.US, "%.6f", value)
