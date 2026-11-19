@@ -96,9 +96,17 @@ android {
         applicationId = "com.clipforge.app"
         minSdk = 26
         targetSdk = 35
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = 7
         versionName = "0.6.2"
-        ndk { abiFilters += listOf("arm64-v8a") }
+        ndk {
+            // CI emulator is x86_64; production APKs remain ARM64-only.
+            abiFilters += if (providers.gradleProperty("clipforgeEmulatorTest").orNull == "true") {
+                listOf("x86_64")
+            } else {
+                listOf("arm64-v8a")
+            }
+        }
         externalNativeBuild { cmake { cppFlags += listOf("-std=c++17") } }
     }
     buildTypes {
