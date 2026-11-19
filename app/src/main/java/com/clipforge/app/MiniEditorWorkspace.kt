@@ -178,7 +178,7 @@ fun MiniEditorWorkspace(
                         start = Offset(left, trackY), end = Offset(right, trackY), strokeWidth = 13.dp.toPx()
                     )
                     drawLine(
-                        color = MaterialTheme.colorScheme.primary,
+                        color = timelineAccent,
                         start = Offset(left, trackY), end = Offset(right, trackY), strokeWidth = 6.dp.toPx()
                     )
                     drawCircle(timelineAccent, radius = 7.dp.toPx(), center = Offset(left, trackY))
