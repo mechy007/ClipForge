@@ -102,7 +102,7 @@ object HighlightDetector {
         val candidates = mutableListOf<ClipCandidate>()
         var start = 0L
         while (start < durationMs) {
-            val end = min(durationMs, start + windowMs)
+            val end = if (start > durationMs - windowMs) durationMs else start + windowMs
             if (end - start < 8_000L) break
             val rows = sorted.filter { it.startMs < end && it.endMs > start }
             if (rows.isNotEmpty()) {
@@ -137,6 +137,7 @@ object HighlightDetector {
                     )
                 }
             }
+            if (start > durationMs - stepMs) break
             start += stepMs
         }
 
