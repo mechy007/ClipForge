@@ -38,7 +38,7 @@ object DirectVideoImporter {
                 check(connection.url.protocol.equals("https", ignoreCase = true)) {
                     "The video link redirected to an insecure connection."
                 }
-                check(connection.responseCode in 200..299) {
+                check(connection.responseCode == HttpURLConnection.HTTP_OK) {
                     "Video server returned HTTP ${connection.responseCode}."
                 }
                 val type = connection.contentType?.substringBefore(';')?.trim()?.lowercase()
