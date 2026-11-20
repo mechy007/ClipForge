@@ -32,9 +32,9 @@ internal class ProgressiveSignalStore(
         val file = path(index)
         if (!file.exists() && !File(file.path + ".bak").exists()) return@runCatching null
         val root = JSONObject(AtomicFile(file).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() })
-        if (root.getInt("version") != 1 ||
+        if (root.opt("version") != 1 ||
             root.getString("fingerprint") != sourceFingerprint ||
-            root.getInt("index") != index) return@runCatching null
+            root.opt("index") != index) return@runCatching null
         root.getJSONObject("signals")
     }.getOrNull()
 
@@ -48,12 +48,16 @@ internal class ProgressiveSignalStore(
             .put("fingerprint", sourceFingerprint)
             .put("index", index)
             .put("signals", JSONObject(signals.toString()))
+        val encoded = root.toString().toByteArray(Charsets.UTF_8)
         val atomic = AtomicFile(file)
         val output = atomic.startWrite()
         try {
-            output.write(root.toString().toByteArray(Charsets.UTF_8))
+            output.write(encoded)
             output.fd.sync()
             atomic.finishWrite(output)
+            check(file.isFile && file.readBytes().contentEquals(encoded)) {
+                "Signal snapshot commit verification failed"
+            }
         } catch (failure: Exception) {
             atomic.failWrite(output)
             throw failure
