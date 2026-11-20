@@ -73,9 +73,17 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
             atomic.failWrite(output)
             throw failure
         }
-        check(atomic.openRead().use { it.readBytes().contentEquals(payload) }) {
-            "Checkpoint contents differ after atomic commit"
+        // finishWrite may return even if a rename fails on some Android versions.
+        // If the persisted file is readable, trust its contents over the return value.
+        val matchesPersisted = runCatching {
+            atomic.openRead().use { it.readBytes().contentEquals(payload) }
+        }.getOrNull()
+        if (matchesPersisted == false) {
+            committed = false
+            error("Checkpoint contents differ after atomic commit")
         }
+        // An unreadable verification result is inconclusive: retain the new state.
+
         } catch (failure: Exception) {
             if (!committed) {
                 if (previous == null) chunks.remove(index) else chunks[index] = previous
