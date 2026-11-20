@@ -37,4 +37,41 @@ class TranscriptCheckpointInstrumentedTest {
             file.delete()
         }
     }
+    @Test fun failedWriteDoesNotMarkChunkCompleteInMemory() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "checkpoint-unwritable-${System.nanoTime()}")
+        assertTrue(directory.createNewFile())
+        val target = File(directory, "checkpoint.json")
+        try {
+            val checkpoint = TranscriptCheckpoint(target, "test-video")
+            var failed = false
+            try {
+                checkpoint.save(0, listOf(TranscriptSegment(0, 100, "unsaved")))
+            } catch (_: Exception) {
+                failed = true
+            }
+            assertTrue("Writing beneath a regular file must fail", failed)
+            assertFalse("Failed checkpoint must be retried", checkpoint.hasChunk(0))
+        } finally {
+            directory.delete()
+        }
+    }
+
+    @Test fun interruptedWriteRestoresCommittedBackup() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = File(context.cacheDir, "checkpoint-backup-${System.nanoTime()}.json")
+        try {
+            TranscriptCheckpoint(file, "same-video").save(0, listOf(TranscriptSegment(0, 100, "saved")))
+            val backup = File(file.path + ".bak")
+            assertTrue(file.renameTo(backup))
+            file.writeText("{truncated")
+            val resumed = TranscriptCheckpoint(file, "same-video").load()
+            assertTrue("Committed chunk must survive interruption", resumed.hasChunk(0))
+            assertEquals("saved", resumed.segments().single().text)
+        } finally {
+            file.delete()
+            File(file.path + ".bak").delete()
+            File(file.path + ".new").delete()
+        }
+    }
 }
