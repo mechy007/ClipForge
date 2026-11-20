@@ -92,6 +92,8 @@ object HighlightDetector {
         if (segments.isEmpty() || durationMs <= 0L) return emptyList()
         val sorted = segments.filter {
             it.startMs >= 0L && it.startMs < durationMs && it.endMs > it.startMs && it.text.isNotBlank()
+        }.map { segment ->
+            if (segment.endMs > durationMs) segment.copy(endMs = durationMs) else segment
         }.sortedBy { it.startMs }
         if (sorted.isEmpty()) return emptyList()
 
