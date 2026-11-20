@@ -87,7 +87,7 @@ object HighlightDetector {
         targetDurationMs: Long = DEFAULT_WINDOW_MS,
         audioEnergy: List<AudioEnergyWindow> = emptyList(),
         sceneCuts: List<Long> = emptyList(),
-        maxClips: Int = 8
+        maxClips: Int = 10
     ): List<ClipCandidate> {
         if (segments.isEmpty() || durationMs <= 0L) return emptyList()
         val sorted = segments.filter {
