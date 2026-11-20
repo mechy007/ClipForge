@@ -39,10 +39,14 @@ object ClipBoundaryRefiner {
             ?.startMs
 
         val safeSceneStart = sceneCuts.filter { cut ->
-            abs(cut - startMs) <= MAX_SNAP_MS && (startSpeech == null || cut <= startSpeech.startMs - SPEECH_GUARD_MS)
+            cut in 0 until durationMs && abs(cut - startMs) <= MAX_SNAP_MS &&
+                (startSpeech == null || cut <= startSpeech.startMs - SPEECH_GUARD_MS) &&
+                transcript.none { it.startMs < cut + SPEECH_GUARD_MS && it.endMs > cut - SPEECH_GUARD_MS }
         }.minByOrNull { abs(it - startMs) }
         val safeSceneEnd = sceneCuts.filter { cut ->
-            abs(cut - endMs) <= MAX_SNAP_MS && (endSpeech == null || cut >= endSpeech.endMs + SPEECH_GUARD_MS)
+            cut in 1..durationMs && abs(cut - endMs) <= MAX_SNAP_MS &&
+                (endSpeech == null || cut >= endSpeech.endMs + SPEECH_GUARD_MS) &&
+                transcript.none { it.startMs < cut + SPEECH_GUARD_MS && it.endMs > cut - SPEECH_GUARD_MS }
         }.minByOrNull { abs(it - endMs) }
 
         val refinedStart = (safeSceneStart ?: quietStart ?: startMs).coerceIn(0L, durationMs - 1L)
