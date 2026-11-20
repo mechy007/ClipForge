@@ -28,6 +28,9 @@ object BatchExportCoordinator {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableStatus = MutableStateFlow(BatchExportStatus())
     val status = mutableStatus.asStateFlow()
+    // Retain verified outputs across changed selections during an interrupted batch.
+    // This is process-local, just like the coordinator's status.
+    private val verifiedBatchClips = linkedSetOf<ClipCandidate>()
 
     fun start(
         context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>,
@@ -43,12 +46,18 @@ object BatchExportCoordinator {
         val sameBatch = retryingInterruptedBatch &&
             previous.sourceUri == source.toString() &&
             previous.folderUri == folder.toString() && previous.aspectRatio == aspectRatio
-        val alreadyCompleted = if (sameBatch) previous.completedClips else emptyList()
-        val remaining = clips.filterNot { it in alreadyCompleted }
+        // A retry may use a different selection: only count previously exported clips
+        // that are still selected, and never count a duplicate more than once.
+        val selectedClips = clips.distinct()
+        if (!sameBatch) verifiedBatchClips.clear()
+        val alreadyCompleted = if (sameBatch) verifiedBatchClips.filter { it in selectedClips } else emptyList()
+        val remaining = selectedClips.filterNot { it in alreadyCompleted }
         if (remaining.isEmpty()) {
             mutableStatus.value = previous.copy(
                 running = false,
-                total = clips.size,
+                completed = alreadyCompleted.size,
+                completedClips = alreadyCompleted,
+                total = selectedClips.size,
                 message = if (alreadyCompleted.isEmpty()) "No highlights were selected."
                     else "All selected clips have already been exported and verified."
             )
@@ -58,7 +67,7 @@ object BatchExportCoordinator {
         mutableStatus.value = BatchExportStatus(
             running = true,
             completed = alreadyCompleted.size,
-            total = clips.size,
+            total = selectedClips.size,
             message = if (alreadyCompleted.isNotEmpty()) "Resuming export · ${remaining.size} clip(s) remaining…" else "Exporting ${remaining.size} selected clip(s)…",
             sourceUri = source.toString(),
             folderUri = folder.toString(),
@@ -69,12 +78,13 @@ object BatchExportCoordinator {
         scope.launch {
             try {
                 BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset, faceTrackingPath) { done, _, clip ->
-                    val verifiedClips = alreadyCompleted + remaining.take(done)
+                    verifiedBatchClips.addAll(remaining.take(done))
+                    val verifiedClips = selectedClips.filter { it in verifiedBatchClips }
                     mutableStatus.value = BatchExportStatus(
                         running = true,
                         completed = verifiedClips.size,
-                        total = clips.size,
-                        message = "Exporting ${verifiedClips.size} / ${clips.size} · ${clip.title}",
+                        total = selectedClips.size,
+                        message = "Exporting ${verifiedClips.size} / ${selectedClips.size} · ${clip.title}",
                         sourceUri = source.toString(),
                         folderUri = folder.toString(),
                         aspectRatio = aspectRatio,
@@ -85,7 +95,7 @@ object BatchExportCoordinator {
                 mutableStatus.value = BatchExportStatus(
                     running = false,
                     completed = completedClips.size,
-                    total = clips.size,
+                    total = selectedClips.size,
                     message = "Batch export complete · ${completedClips.size} clips saved and verified. Source video kept for safety.",
                     sourceUri = source.toString(),
                     folderUri = folder.toString(),
