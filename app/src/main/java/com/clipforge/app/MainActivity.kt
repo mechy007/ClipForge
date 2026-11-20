@@ -70,8 +70,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val liveRecording = intent.getStringExtra(EXTRA_LIVE_RECORDING_PATH)
             ?.let { Uri.fromFile(java.io.File(it)) }
-        window.statusBarColor = android.graphics.Color.rgb(11, 13, 11)
-        window.navigationBarColor = android.graphics.Color.rgb(21, 25, 21)
+        window.statusBarColor = android.graphics.Color.rgb(10, 15, 24)
+        window.navigationBarColor = android.graphics.Color.rgb(18, 27, 41)
         setContent {
             ClipForgeTheme { ClipForgeHome(liveRecording) }
         }
@@ -361,8 +361,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             Icon(Icons.Default.ContentCut, contentDescription = null, tint = Ink)
                         }
                         Column(Modifier.padding(start = 10.dp)) {
-                            Text("CLIPFORGE", fontSize = 17.sp, fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
-                            Text("VIDEO CLIPPING WORKSPACE", color = Muted, fontSize = 8.sp, letterSpacing = 1.05.sp)
+                            Text("ClipForge", fontSize = 19.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+                            Text("CREATOR STUDIO", color = Muted, fontSize = 9.sp, letterSpacing = 1.3.sp)
                         }
                         Spacer(Modifier.weight(1f))
                         Surface(color = Panel, shape = RoundedCornerShape(18.dp)) {
@@ -372,21 +372,21 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Box(Modifier.size(6.dp).background(if (ready) Accent else Muted, CircleShape))
-                                Text(if (ready) "AI READY" else "AI SETUP", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                Text(if (ready) "ON-DEVICE AI" else "SETTING UP", color = if (ready) Accent else Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                     Spacer(Modifier.height(12.dp))
                     Text(
                         when (activeSection) {
-                            "Editor" -> "Edit your video"
-                            "Studio" -> "Create standout clips"
-                            "Highlights" -> "Review your best moments"
-                            "Projects" -> "Project library"
-                            else -> "Livestream tools"
+                            "Editor" -> "Your workspace"
+                            "Studio" -> "Create with AI"
+                            "Highlights" -> "Your highlights"
+                            "Projects" -> "Recent projects"
+                            else -> "Live workspace"
                         },
-                        color = Color(0xFFF0F2E8), fontSize = 23.sp, lineHeight = 27.sp,
-                        fontWeight = FontWeight.Bold, letterSpacing = (-0.55).sp, maxLines = 1
+                        color = Color(0xFFF0F2E8), fontSize = 27.sp, lineHeight = 32.sp,
+                        fontWeight = FontWeight.Bold, letterSpacing = (-0.85).sp, maxLines = 1
                     )
                     Text(
                         when (activeSection) {
@@ -402,10 +402,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             },
             bottomBar = {
                 val destinations = listOf(
-                    Triple("Editor", "Edit", Icons.Default.Tune),
-                    Triple("Highlights", "Clips", Icons.Default.AutoAwesome),
-                    Triple("Projects", "Projects", Icons.Default.FolderOpen),
-                    Triple("Studio", "Create", Icons.Default.Movie),
+                    Triple("Editor", "Editor", Icons.Default.Tune),
+                    Triple("Studio", "AI Studio", Icons.Default.AutoAwesome),
+                    Triple("Highlights", "Clips", Icons.Default.ContentCut),
+                    Triple("Projects", "Library", Icons.Default.FolderOpen),
                     Triple("Live", "Live", Icons.Default.LiveTv)
                 )
                 NavigationBar(containerColor = Panel, contentColor = Color(0xFFF0F2E8), tonalElevation = 0.dp) {
@@ -440,11 +440,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     source == null -> Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(20.dp)) {
                         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Icon(Icons.Default.Movie, null, tint = Accent, modifier = Modifier.size(30.dp))
-                            Text("Mini editor", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            Text("Import a video to open the timeline editor.", color = Muted, fontSize = 12.sp)
+                            Text("Start creating", fontWeight = FontWeight.Bold, fontSize = 21.sp)
+                            Text("Bring in footage, refine the timeline, and export clips ready for Shorts or Reels.", color = Muted, fontSize = 13.sp)
                             Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Default.FolderOpen, null)
-                                Text("  Import video")
+                                Text("  Choose video")
                             }
                         }
                     }
