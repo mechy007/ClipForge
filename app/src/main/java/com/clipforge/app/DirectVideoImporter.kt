@@ -72,7 +72,10 @@ object DirectVideoImporter {
                             currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
-                            if (count == 0) continue
+                            if (count == 0) {
+                                kotlinx.coroutines.yield()
+                                continue
+                            }
                             check(StatFs(target.parentFile!!.absolutePath).availableBytes > count.toLong() + 1024L * 1024L) {
                                 "Not enough free storage to finish downloading this video."
                             }
