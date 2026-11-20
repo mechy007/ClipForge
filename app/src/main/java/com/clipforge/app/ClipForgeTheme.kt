@@ -8,16 +8,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-/** Compact, high-contrast palette adapted for the ClipForge Android workflow. */
+/** Consistent dark creator-studio design system for the Android editor. */
 internal object ClipForgePalette {
-    val Background = Color(0xFF0A0F18)
-    val Surface = Color(0xFF121B29)
-    val SurfaceRaised = Color(0xFF1B293B)
-    val Accent = Color(0xFF56D8E8)
-    val AccentSoft = Color(0xFF8EAFC8)
-    val Text = Color(0xFFF2F7FC)
-    val Muted = Color(0xFF9AAFC2)
-    val Border = Color(0xFF293B50)
+    val Background = Color(0xFF090D15)
+    val Surface = Color(0xFF141D2B)
+    val SurfaceRaised = Color(0xFF202D40)
+    val Accent = Color(0xFF67E0D2)
+    val AccentSoft = Color(0xFFA3B7CF)
+    val Text = Color(0xFFF5F8FC)
+    val Muted = Color(0xFF9BAFC4)
+    val Border = Color(0xFF304054)
     val Danger = Color(0xFFF08B84)
 }
 
@@ -41,9 +41,9 @@ internal fun ClipForgeTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = colors,
         shapes = Shapes(
-            small = RoundedCornerShape(12.dp),
-            medium = RoundedCornerShape(18.dp),
-            large = RoundedCornerShape(24.dp)
+            small = RoundedCornerShape(10.dp),
+            medium = RoundedCornerShape(16.dp),
+            large = RoundedCornerShape(22.dp)
         ),
         content = content
     )
