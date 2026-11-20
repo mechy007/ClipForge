@@ -2,7 +2,7 @@ package com.clipforge.app
 
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -35,16 +35,19 @@ internal object ProgressiveMediaPipeline {
     ) = coroutineScope {
         val checkpointMutex = Mutex()
         val ready = Channel<FinalizedMediaSegment>(capacity = ProgressiveSegmentPlanner.MAX_READY_SEGMENTS)
-        val producer = launch {
+        val producer = async {
             try {
                 source.produce { item ->
-                    require(item.segment.index >= 0 && item.segment.endMs > item.segment.startMs) { "Invalid segment boundaries" }
+                    require(item.segment.index >= 0 && item.segment.startMs >= 0L && item.segment.endMs > item.segment.startMs) { "Invalid segment boundaries" }
                     require(item.file.isFile && item.file.length() > 0L) {
                         "Segment must be finalized on disk before publication"
                     }
                     checkpointMutex.withLock { checkpoint.markFinalized(item.segment.index) }
                     ready.send(item)
                 }
+            } catch (failure: Throwable) {
+                ready.close(failure)
+                throw failure
             } finally {
                 ready.close()
             }
@@ -59,7 +62,7 @@ internal object ProgressiveMediaPipeline {
                     checkpointMutex.withLock { checkpoint.markProcessed(item.segment.index) }
                 }
             }
-            producer.join()
+            producer.await()
         } finally {
             producer.cancel()
             ready.cancel()
