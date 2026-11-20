@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 
 data class VideoDownloadProgress(val downloadedBytes: Long, val totalBytes: Long?)
 
@@ -52,9 +53,11 @@ object DirectVideoImporter {
                 }
                 val length = connection.contentLengthLong.takeIf { it > 0L }
                 check(length == null || length <= MAX_BYTES) { "Video exceeds the 2 GB import limit." }
-                val target = File(context.filesDir, "imports/video-${System.currentTimeMillis()}.$extension")
+                val target = File(context.filesDir, "imports/video-${UUID.randomUUID()}.$extension")
                 partial = File(target.parentFile, target.name + ".part")
-                target.parentFile?.mkdirs()
+                check(target.parentFile?.let { it.isDirectory || it.mkdirs() } == true) {
+                    "Could not create video import directory."
+                }
                 connection.inputStream.use { input ->
                     partial.outputStream().buffered().use { output ->
                         val buffer = ByteArray(64 * 1024)
@@ -63,6 +66,7 @@ object DirectVideoImporter {
                             currentCoroutineContext().ensureActive()
                             val count = input.read(buffer)
                             if (count < 0) break
+                            if (count == 0) continue
                             total += count
                             check(total <= MAX_BYTES) { "Video exceeds the 2 GB import limit." }
                             output.write(buffer, 0, count)
