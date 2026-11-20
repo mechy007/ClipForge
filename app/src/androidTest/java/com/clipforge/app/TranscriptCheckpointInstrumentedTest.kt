@@ -37,4 +37,25 @@ class TranscriptCheckpointInstrumentedTest {
             file.delete()
         }
     }
+    @Test fun failedWriteDoesNotMarkChunkCompleteInMemory() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "checkpoint-unwritable-${System.nanoTime()}.json")
+        assertTrue(directory.mkdir())
+        try {
+            val checkpoint = TranscriptCheckpoint(directory, "test-video")
+            var failed = false
+            try {
+                checkpoint.save(0, listOf(TranscriptSegment(0, 100, "unsaved")))
+            } catch (_: Exception) {
+                failed = true
+            }
+            assertTrue("Writing checkpoint to a directory must fail", failed)
+            assertFalse("Failed checkpoint must be retried", checkpoint.hasChunk(0))
+        } finally {
+            directory.deleteRecursively()
+            File(context.cacheDir, directory.name + ".new").delete()
+            File(context.cacheDir, directory.name + ".bak").delete()
+        }
+    }
+
 }
