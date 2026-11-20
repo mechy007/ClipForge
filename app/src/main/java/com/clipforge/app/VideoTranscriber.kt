@@ -50,8 +50,12 @@ object VideoTranscriber {
                 audioEnergy += window
             }
 
-            whisperSessionStarted = true
+            check(pcmFile.isFile && pcmFile.length() > 0L && pcmFile.length() % Float.SIZE_BYTES == 0L) {
+                "Decoded audio is empty or contains an incomplete PCM sample"
+            }
+
             WhisperEngine.beginSession(context)
+            whisperSessionStarted = true
             onStatus("Starting on-device transcription…")
 
             val checkpoint = TranscriptCheckpoint.forVideo(context, videoUri, language)
