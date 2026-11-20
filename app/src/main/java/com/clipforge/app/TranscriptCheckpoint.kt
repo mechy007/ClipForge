@@ -48,6 +48,7 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
     fun save(index: Int, segments: List<TranscriptSegment>) {
         require(index >= 0)
         val previous = chunks.put(index, segments)
+        var committed = false
         try {
         val root = JSONObject().put("fingerprint", fingerprint)
         val rows = JSONArray()
@@ -66,6 +67,7 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
         try {
             output.write(payload)
             atomic.finishWrite(output)
+            committed = true
         } catch (failure: Exception) {
             // A failed write can be rolled back; a finished write must not be.
             atomic.failWrite(output)
@@ -75,7 +77,9 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
             "Checkpoint contents differ after atomic commit"
         }
         } catch (failure: Exception) {
-            if (previous == null) chunks.remove(index) else chunks[index] = previous
+            if (!committed) {
+                if (previous == null) chunks.remove(index) else chunks[index] = previous
+            }
             throw failure
         }
     }
