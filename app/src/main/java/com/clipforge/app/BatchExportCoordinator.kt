@@ -43,12 +43,15 @@ object BatchExportCoordinator {
         val sameBatch = retryingInterruptedBatch &&
             previous.sourceUri == source.toString() &&
             previous.folderUri == folder.toString() && previous.aspectRatio == aspectRatio
-        val alreadyCompleted = if (sameBatch) previous.completedClips else emptyList()
-        val remaining = clips.filterNot { it in alreadyCompleted }
+        // A retry may use a different selection: only count previously exported clips
+        // that are still selected, and never count a duplicate more than once.
+        val selectedClips = clips.distinct()
+        val alreadyCompleted = if (sameBatch) previous.completedClips.distinct().filter { it in selectedClips } else emptyList()
+        val remaining = selectedClips.filterNot { it in alreadyCompleted }
         if (remaining.isEmpty()) {
             mutableStatus.value = previous.copy(
                 running = false,
-                total = clips.size,
+                total = selectedClips.size,
                 message = if (alreadyCompleted.isEmpty()) "No highlights were selected."
                     else "All selected clips have already been exported and verified."
             )
@@ -58,7 +61,7 @@ object BatchExportCoordinator {
         mutableStatus.value = BatchExportStatus(
             running = true,
             completed = alreadyCompleted.size,
-            total = clips.size,
+            total = selectedClips.size,
             message = if (alreadyCompleted.isNotEmpty()) "Resuming export · ${remaining.size} clip(s) remaining…" else "Exporting ${remaining.size} selected clip(s)…",
             sourceUri = source.toString(),
             folderUri = folder.toString(),
@@ -73,8 +76,8 @@ object BatchExportCoordinator {
                     mutableStatus.value = BatchExportStatus(
                         running = true,
                         completed = verifiedClips.size,
-                        total = clips.size,
-                        message = "Exporting ${verifiedClips.size} / ${clips.size} · ${clip.title}",
+                        total = selectedClips.size,
+                        message = "Exporting ${verifiedClips.size} / ${selectedClips.size} · ${clip.title}",
                         sourceUri = source.toString(),
                         folderUri = folder.toString(),
                         aspectRatio = aspectRatio,
@@ -85,7 +88,7 @@ object BatchExportCoordinator {
                 mutableStatus.value = BatchExportStatus(
                     running = false,
                     completed = completedClips.size,
-                    total = clips.size,
+                    total = selectedClips.size,
                     message = "Batch export complete · ${completedClips.size} clips saved and verified. Source video kept for safety.",
                     sourceUri = source.toString(),
                     folderUri = folder.toString(),
