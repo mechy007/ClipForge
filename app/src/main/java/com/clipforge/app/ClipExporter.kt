@@ -41,9 +41,8 @@ object ClipExporter {
                 cleanup?.delete()
                 mainHandler.post { onFinished(true, "Clip exported successfully.") }
             } catch (error: Exception) {
-                source.delete()
-                cleanup?.delete()
-                mainHandler.post { onFinished(false, "Save failed: ${error.localizedMessage ?: "unknown error"}") }
+                // Keep the completed render available in cache if saving fails.
+                mainHandler.post { onFinished(false, "Save failed: ${error.localizedMessage ?: "unknown error"}; rendered MP4 retained for retry.") }
             }
         }
     }
@@ -190,12 +189,15 @@ object ClipExporter {
             })
             .build()
 
-        mainHandler.post { onStatus("Rendering MP4…") }
-        try {
-            transformer.start(editedItem, output.absolutePath)
-        } catch (error: Exception) {
-            output.delete()
-            mainHandler.post { onFinished(false, "Could not start export: ${error.localizedMessage ?: "unknown error"}") }
+        mainHandler.post {
+            onStatus("Rendering MP4…")
+            try {
+                // Transformer must run on the looper used when it was created.
+                transformer.start(editedItem, output.absolutePath)
+            } catch (error: Exception) {
+                output.delete()
+                onFinished(false, "Could not start export: ${error.localizedMessage ?: "unknown error"}")
+            }
         }
     }
 }
