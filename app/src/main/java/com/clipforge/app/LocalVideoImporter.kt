@@ -29,7 +29,8 @@ object LocalVideoImporter {
         require(mime == null || mime.startsWith("video/") || mime == "application/octet-stream") {
             "The selected file is not a supported video."
         }
-        val directory = File(context.filesDir, "imports").apply { mkdirs() }
+        val directory = File(context.filesDir, "imports")
+        check(directory.isDirectory || directory.mkdirs()) { "Could not create video import directory." }
         val suffix = when (mime) {
             "video/mp4" -> ".mp4"
             "video/quicktime" -> ".mov"
@@ -46,7 +47,7 @@ object LocalVideoImporter {
             val size = resolver.openAssetFileDescriptor(source, "r")?.use { it.length.takeIf { n -> n >= 0 } }
             if (size != null) {
                 val free = StatFs(directory.absolutePath).availableBytes
-                check(size < free) { "Not enough free storage to import this video." }
+                check(free > size + 1024L * 1024L) { "Not enough free storage to import this video." }
             }
             val input = resolver.openInputStream(source) ?: throw IOException("Cannot read the selected video.")
             input.use { stream ->
