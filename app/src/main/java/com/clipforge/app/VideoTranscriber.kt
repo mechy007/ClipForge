@@ -98,8 +98,12 @@ object VideoTranscriber {
                 audioEnergy = audioEnergy
             )
         } finally {
-            if (whisperSessionStarted) WhisperEngine.endSession()
-            pcmFile.delete()
+            try {
+                if (whisperSessionStarted) WhisperEngine.endSession()
+            } finally {
+                // Clean up large decoded audio even if native session teardown throws.
+                pcmFile.delete()
+            }
         }
     }
 }
