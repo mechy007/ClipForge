@@ -140,14 +140,16 @@ object HighlightDetector {
             start += stepMs
         }
 
+        val clipLimit = maxClips.coerceIn(1, 100)
         val chosen = mutableListOf<ClipCandidate>()
-        candidates.sortedByDescending { it.score }.forEach { candidate ->
+        for (candidate in candidates.sortedByDescending { it.score }) {
+            if (chosen.size >= clipLimit) break
             if (chosen.none { existing ->
                     intersectionOverUnion(candidate.startMs, candidate.endMs, existing.startMs, existing.endMs) > DEDUPE_IOU ||
                         overlapOfShorter(candidate.startMs, candidate.endMs, existing.startMs, existing.endMs) > 0.65
                 }) chosen += candidate
         }
-        return chosen.sortedByDescending { it.score }.take(maxClips.coerceIn(1, 100))
+        return chosen.sortedByDescending { it.score }
     }
 
     /** Rejects nearly-contained clips even when their union overlap is small. */
