@@ -64,4 +64,39 @@ class YouTubeDownloadValidationTest {
         }
     }
 
+    @Test fun extendedSizeMp4BoxesAreAccepted() {
+        val mp4 = File.createTempFile("clipforge-extended-", ".mp4")
+        try {
+            fun extendedBox(type: String, payload: String): ByteArray {
+                val bytes = payload.toByteArray(Charsets.US_ASCII)
+                val size = (16L + bytes.size).toLong()
+                return java.nio.ByteBuffer.allocate(16 + bytes.size)
+                    .putInt(1).put(type.toByteArray(Charsets.US_ASCII))
+                    .putLong(size).put(bytes).array()
+            }
+            mp4.writeBytes(
+                extendedBox("ftyp", "isom") +
+                    extendedBox("mdat", "data") +
+                    extendedBox("moov", "meta")
+            )
+            assertTrue(YouTubeDownloadValidation.isValidMp4(mp4))
+        } finally {
+            mp4.delete()
+        }
+    }
+
+    @Test fun malformedExtendedBoxSizeIsRejected() {
+        val mp4 = File.createTempFile("clipforge-bad-extended-", ".mp4")
+        try {
+            val invalid = java.nio.ByteBuffer.allocate(20)
+                .putInt(1).put("ftyp".toByteArray(Charsets.US_ASCII))
+                .putLong(Long.MAX_VALUE).put("isom".toByteArray(Charsets.US_ASCII))
+                .array()
+            mp4.writeBytes(invalid)
+            assertFalse(YouTubeDownloadValidation.isValidMp4(mp4))
+        } finally {
+            mp4.delete()
+        }
+    }
+
 }
