@@ -28,10 +28,14 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
             for (i in 0 until saved.length()) {
                 val chunk = saved.getJSONObject(i)
                 val index = chunk.getInt("index")
+                require(index >= 0 && !chunks.containsKey(index)) { "Invalid or repeated checkpoint chunk index" }
                 val segments = chunk.getJSONArray("segments")
                 chunks[index] = (0 until segments.length()).map { j ->
                     val item = segments.getJSONObject(j)
-                    TranscriptSegment(item.getLong("startMs"), item.getLong("endMs"), item.getString("text"))
+                    val start = item.getLong("startMs")
+                    val end = item.getLong("endMs")
+                    require(start >= 0L && end > start) { "Invalid checkpoint segment timestamps" }
+                    TranscriptSegment(start, end, item.getString("text"))
                 }
             }
         }.onFailure { chunks.clear() }
