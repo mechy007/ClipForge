@@ -19,6 +19,7 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
     private val chunks = sortedMapOf<Int, List<TranscriptSegment>>()
 
     fun load(): TranscriptCheckpoint {
+        chunks.clear()
         if (!file.isFile && !File(file.path + ".bak").isFile) return this
         runCatching {
             val root = JSONObject(AtomicFile(file).openRead().bufferedReader().use { it.readText() })
@@ -61,12 +62,13 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
         try {
             output.write(payload)
             atomic.finishWrite(output)
-            check(atomic.openRead().use { it.readBytes().contentEquals(payload) }) {
-                "Checkpoint contents differ after atomic commit"
-            }
         } catch (failure: Exception) {
+            // A failed write can be rolled back; a finished write must not be.
             atomic.failWrite(output)
             throw failure
+        }
+        check(atomic.openRead().use { it.readBytes().contentEquals(payload) }) {
+            "Checkpoint contents differ after atomic commit"
         }
         } catch (failure: Exception) {
             if (previous == null) chunks.remove(index) else chunks[index] = previous
