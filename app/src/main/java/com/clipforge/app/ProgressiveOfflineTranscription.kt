@@ -44,7 +44,9 @@ internal object ProgressiveOfflineTranscription {
                     endMs = Math.addExact(item.endMs, span.startMs)
                 )
             }
-            val energy = result.audioEnergy.map { item ->
+            val energy = result.audioEnergy.mapNotNull { item ->
+                // PCM extraction may emit a sub-millisecond tail rounded to zero duration.
+                if (item.startMs == item.endMs && item.startMs >= 0 && item.startMs <= span.endMs - span.startMs) return@mapNotNull null
                 require(item.startMs >= 0 && item.endMs > item.startMs && item.endMs <= span.endMs - span.startMs) {
                     "Audio energy timestamps outside finalized segment"
                 }
