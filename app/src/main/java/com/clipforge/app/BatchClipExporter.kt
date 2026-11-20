@@ -32,13 +32,13 @@ object BatchClipExporter {
         try {
         val exportSource = if (faceTrackingPath.isNotEmpty() && source.scheme != "file") {
             val cached = java.io.File(context.cacheDir, "clipforge_batch_source_${System.nanoTime()}.mp4")
+            batchSourceCache = cached
             withContext(Dispatchers.IO) {
                 resolver.openInputStream(source)?.use { input ->
                     cached.outputStream().buffered().use { output -> input.copyTo(output) }
                 } ?: error("Could not read the source video for face-aware batch export.")
             }
             check(cached.isFile && cached.length() > 0L) { "The cached batch source video is empty." }
-            batchSourceCache = cached
             Uri.fromFile(cached)
         } else source
 
@@ -98,7 +98,13 @@ object BatchClipExporter {
                         val durationMs = retriever.extractMetadata(
                             MediaMetadataRetriever.METADATA_KEY_DURATION
                         )?.toLongOrNull() ?: 0L
-                        durationMs > 0L
+                        val width = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
+                        )?.toIntOrNull() ?: 0
+                        val height = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
+                        )?.toIntOrNull() ?: 0
+                        durationMs > 0L && width > 0 && height > 0
                     } finally {
                         retriever.release()
                     }
@@ -108,7 +114,7 @@ object BatchClipExporter {
                 withContext(Dispatchers.IO) {
                     runCatching { DocumentsContract.deleteDocument(resolver, destination) }
                 }
-                error("$name was exported but is empty or not a readable MP4 with a valid duration.")
+                error("$name was exported but is empty or not a readable video MP4 with valid duration and dimensions.")
             }
 
             completed++
