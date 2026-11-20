@@ -6,7 +6,7 @@ import java.io.FileInputStream
 /** Conservative validation: a successful process exit alone is not a completed import. */
 internal object YouTubeDownloadValidation {
     fun isForbidden(message: String): Boolean =
-        Regex("""(?i)(?:\\b403\\b|\\bforbidden\\b)""").containsMatchIn(message)
+        message.contains("403") || message.contains("forbidden", ignoreCase = true)
 
     fun isValidMp4(file: File): Boolean {
         if (!file.isFile || file.length() < 12L) return false
