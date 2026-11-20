@@ -77,7 +77,7 @@ object HighlightDetector {
         targetDurationMs: Long = DEFAULT_WINDOW_MS,
         audioEnergy: List<AudioEnergyWindow> = emptyList(),
         sceneCuts: List<Long> = emptyList(),
-        maxClips: Int = 8
+        maxClips: Int = 10
     ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs, audioEnergy, sceneCuts, maxClips)
 
     fun detectWithWeights(
@@ -143,10 +143,18 @@ object HighlightDetector {
         val chosen = mutableListOf<ClipCandidate>()
         candidates.sortedByDescending { it.score }.forEach { candidate ->
             if (chosen.none { existing ->
-                    intersectionOverUnion(candidate.startMs, candidate.endMs, existing.startMs, existing.endMs) > DEDUPE_IOU
+                    intersectionOverUnion(candidate.startMs, candidate.endMs, existing.startMs, existing.endMs) > DEDUPE_IOU ||
+                        overlapOfShorter(candidate.startMs, candidate.endMs, existing.startMs, existing.endMs) > 0.65
                 }) chosen += candidate
         }
         return chosen.sortedByDescending { it.score }.take(maxClips.coerceIn(1, 100))
+    }
+
+    /** Rejects nearly-contained clips even when their union overlap is small. */
+    fun overlapOfShorter(aStart: Long, aEnd: Long, bStart: Long, bEnd: Long): Double {
+        if (aEnd <= aStart || bEnd <= bStart) return 0.0
+        val overlap = max(0L, min(aEnd, bEnd) - max(aStart, bStart))
+        return overlap.toDouble() / min(aEnd - aStart, bEnd - bStart).toDouble()
     }
 
     fun intersectionOverUnion(aStart: Long, aEnd: Long, bStart: Long, bEnd: Long): Double {
