@@ -17,7 +17,10 @@ object ClipBoundaryRefiner {
         audio: List<AudioEnergyWindow>,
         sceneCuts: List<Long> = emptyList()
     ): Pair<Long, Long> {
-        if (durationMs <= 0L || endMs <= startMs) return startMs to endMs
+        if (durationMs <= 0L) return 0L to 0L
+        val boundedStart = startMs.coerceIn(0L, durationMs - 1L)
+        val boundedEnd = endMs.coerceIn(boundedStart + 1L, durationMs)
+        if (endMs <= startMs) return boundedStart to boundedEnd
         val startSpeech = transcript.filter { it.endMs > startMs && it.startMs < endMs }
             .minByOrNull { it.startMs }
         val endSpeech = transcript.filter { it.endMs > startMs && it.startMs < endMs }
@@ -52,8 +55,8 @@ object ClipBoundaryRefiner {
         val refinedStart = (safeSceneStart ?: quietStart ?: startMs).coerceIn(0L, durationMs - 1L)
         val refinedEnd = (safeSceneEnd ?: quietEnd ?: endMs).coerceIn(refinedStart + 1L, durationMs)
         // Never accept a snap that removes a detected speech segment.
-        val safeStart = if (transcript.any { it.startMs < refinedStart && it.endMs > refinedStart }) startMs else refinedStart
-        val safeEnd = if (transcript.any { it.startMs < refinedEnd && it.endMs > refinedEnd }) endMs else refinedEnd
+        val safeStart = if (transcript.any { it.startMs < refinedStart && it.endMs > refinedStart }) boundedStart else refinedStart
+        val safeEnd = if (transcript.any { it.startMs < refinedEnd && it.endMs > refinedEnd }) boundedEnd else refinedEnd
         return safeStart to max(safeStart + 1L, min(durationMs, safeEnd))
     }
 }
