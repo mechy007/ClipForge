@@ -19,9 +19,9 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
     private val chunks = sortedMapOf<Int, List<TranscriptSegment>>()
 
     fun load(): TranscriptCheckpoint {
-        if (!file.isFile) return this
+        if (!file.isFile && !File(file.path + ".bak").isFile) return this
         runCatching {
-            val root = JSONObject(file.readText())
+            val root = JSONObject(AtomicFile(file).openRead().bufferedReader().use { it.readText() })
             if (root.optString("fingerprint") != fingerprint) return@runCatching
             val saved = root.getJSONArray("chunks")
             for (i in 0 until saved.length()) {
@@ -56,10 +56,14 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
         root.put("chunks", rows)
         file.parentFile?.mkdirs()
         val atomic = AtomicFile(file)
+        val payload = root.toString().toByteArray(Charsets.UTF_8)
         val output = atomic.startWrite()
         try {
-            output.write(root.toString().toByteArray(Charsets.UTF_8))
+            output.write(payload)
             atomic.finishWrite(output)
+            check(atomic.openRead().use { it.readBytes().contentEquals(payload) }) {
+                "Checkpoint contents differ after atomic commit"
+            }
         } catch (failure: Exception) {
             atomic.failWrite(output)
             throw failure
