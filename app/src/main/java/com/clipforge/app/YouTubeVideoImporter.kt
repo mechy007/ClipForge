@@ -24,6 +24,15 @@ object YouTubeVideoImporter {
             try {
                 YoutubeDL.init(context.applicationContext)
                 FFmpeg.init(context.applicationContext)
+                // Refresh the yt-dlp extractor before using it: the library's bundled
+                // extractor can become stale when YouTube changes its player API.
+                // A network/update failure is not a successful download; the
+                // subsequent extraction and MP4 validation still determine success.
+                try {
+                    YoutubeDL.updateYoutubeDL(context.applicationContext, YoutubeDL.UpdateChannel._STABLE)
+                } catch (updateError: Exception) {
+                    android.util.Log.w("ClipForgeYouTube", "yt-dlp update unavailable; trying installed extractor", updateError)
+                }
                 val request = YoutubeDLRequest("https://www.youtube.com/watch?v=$videoId")
                     .addOption("--no-playlist")
                     .addOption("--match-filter", "!is_live & !is_upcoming")
