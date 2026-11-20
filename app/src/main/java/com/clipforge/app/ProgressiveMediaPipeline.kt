@@ -3,6 +3,8 @@ package com.clipforge.app
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 /** An independently decodable, fully finalized local media segment. */
@@ -31,6 +33,7 @@ internal object ProgressiveMediaPipeline {
         checkpoint: ProgressiveSegmentCheckpoint,
         analyze: suspend (FinalizedMediaSegment) -> Unit
     ) = coroutineScope {
+        val checkpointMutex = Mutex()
         val ready = Channel<FinalizedMediaSegment>(capacity = ProgressiveSegmentPlanner.MAX_READY_SEGMENTS)
         val producer = launch {
             try {
@@ -39,7 +42,7 @@ internal object ProgressiveMediaPipeline {
                     require(item.file.isFile && item.file.length() > 0L) {
                         "Segment must be finalized on disk before publication"
                     }
-                    checkpoint.markFinalized(item.segment.index)
+                    checkpointMutex.withLock { checkpoint.markFinalized(item.segment.index) }
                     ready.send(item)
                 }
             } finally {
@@ -53,7 +56,7 @@ internal object ProgressiveMediaPipeline {
                         "Finalized segment disappeared before analysis"
                     }
                     analyze(item)
-                    checkpoint.markProcessed(item.segment.index)
+                    checkpointMutex.withLock { checkpoint.markProcessed(item.segment.index) }
                 }
             }
             producer.join()
