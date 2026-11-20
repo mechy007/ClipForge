@@ -51,6 +51,8 @@ object BatchExportCoordinator {
         if (remaining.isEmpty()) {
             mutableStatus.value = previous.copy(
                 running = false,
+                completed = alreadyCompleted.size,
+                completedClips = alreadyCompleted,
                 total = selectedClips.size,
                 message = if (alreadyCompleted.isEmpty()) "No highlights were selected."
                     else "All selected clips have already been exported and verified."
