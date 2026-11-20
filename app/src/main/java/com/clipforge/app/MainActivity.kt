@@ -570,7 +570,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     try {
                         val imported = if (youtubeLink) {
                             YouTubeVideoImporter.download(context, url, youtubeQuality) { percent ->
-                                scope.launch { linkStatus = "Downloading and preparing video · $percent%" }
+                                scope.launch { if (importingLink && !linkStatus.startsWith("Download failed:")) linkStatus = "Downloading and preparing video · $percent%" }
                             }
                         } else DirectVideoImporter.download(context, url) { p ->
                             if (p.downloadedBytes % (1024L * 1024L) < 64L * 1024L) scope.launch { linkStatus = "Downloaded ${p.downloadedBytes / 1_048_576} MB" }
