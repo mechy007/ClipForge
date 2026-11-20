@@ -40,7 +40,7 @@ internal object ProgressiveSegmentPlanner {
         val pending = segments.firstOrNull { it.index !in processedIndices } ?: return emptyList()
         return segments.asSequence()
             .dropWhile { it.index != pending.index }
-            .takeWhile { it.index in finalizedIndices }
+            .takeWhile { it.index in finalizedIndices && it.index !in processedIndices }
             .take(maxReady)
             .toList()
     }
