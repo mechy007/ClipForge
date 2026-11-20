@@ -57,7 +57,10 @@ object LocalVideoImporter {
                         currentCoroutineContext().ensureActive()
                         val count = stream.read(buffer)
                         if (count < 0) break
-                        if (count == 0) continue
+                        if (count == 0) {
+                            kotlinx.coroutines.yield()
+                            continue
+                        }
                         val free = StatFs(directory.absolutePath).availableBytes
                         check(free > count.toLong() + 1024L * 1024L) {
                             "Not enough free storage to finish importing this video."
