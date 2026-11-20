@@ -35,7 +35,7 @@ object YouTubeVideoImporter {
                 }
                 val request = YoutubeDLRequest("https://www.youtube.com/watch?v=$videoId")
                     .addOption("--no-playlist")
-                    .addOption("--match-filter", "!is_live & !is_upcoming")
+                    // Allow currently live broadcasts: excluding is_live rejected the very\n                    // livestream imports this feature supports. Upcoming videos still\n                    // cannot be downloaded until a broadcast begins.\n                    .addOption("--match-filter", "!is_upcoming")
                     .addOption("--socket-timeout", 30)
                     .addOption("--retries", 3)
                     .addOption("--fragment-retries", 3)
