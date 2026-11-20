@@ -10,14 +10,14 @@ import androidx.compose.ui.unit.dp
 
 /** Compact, high-contrast palette adapted for the ClipForge Android workflow. */
 internal object ClipForgePalette {
-    val Background = Color(0xFF0B0D0B)
-    val Surface = Color(0xFF151915)
-    val SurfaceRaised = Color(0xFF20271E)
-    val Accent = Color(0xFFD8F36A)
-    val AccentSoft = Color(0xFFB9C98F)
-    val Text = Color(0xFFF0F2E8)
-    val Muted = Color(0xFFA6AE9E)
-    val Border = Color(0xFF30382C)
+    val Background = Color(0xFF0A0F18)
+    val Surface = Color(0xFF121B29)
+    val SurfaceRaised = Color(0xFF1B293B)
+    val Accent = Color(0xFF56D8E8)
+    val AccentSoft = Color(0xFF8EAFC8)
+    val Text = Color(0xFFF2F7FC)
+    val Muted = Color(0xFF9AAFC2)
+    val Border = Color(0xFF293B50)
     val Danger = Color(0xFFF08B84)
 }
 

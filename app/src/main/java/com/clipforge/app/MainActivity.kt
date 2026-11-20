@@ -143,7 +143,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var selectedClips by remember { mutableStateOf<Set<ClipCandidate>>(emptySet()) }
     val batchStatus by BatchExportCoordinator.status.collectAsState()
     val batchExporting = batchStatus.running
-    var activeSection by rememberSaveable { mutableStateOf("Studio") }
+    var activeSection by rememberSaveable { mutableStateOf("Editor") }
     var liveMarkers by remember { mutableStateOf<List<LiveChatHighlightMarker>>(emptyList()) }
     var activeLiveSessionId by remember { mutableStateOf<Long?>(null) }
     var transcriptSegments by remember { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
@@ -351,52 +351,62 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             topBar = {
                 Column(
                     Modifier.fillMaxWidth().background(Ink).statusBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                        .padding(horizontal = 18.dp, vertical = 10.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(38.dp).background(Accent, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier.size(34.dp).background(Accent, RoundedCornerShape(11.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(Icons.Default.ContentCut, contentDescription = null, tint = Ink)
                         }
                         Column(Modifier.padding(start = 10.dp)) {
-                            Text("ClipForge", fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.5).sp)
-                            Text("LOCAL-FIRST CLIP STUDIO", color = Muted, fontSize = 9.sp, letterSpacing = 1.15.sp)
+                            Text("CLIPFORGE", fontSize = 17.sp, fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
+                            Text("VIDEO CLIPPING WORKSPACE", color = Muted, fontSize = 8.sp, letterSpacing = 1.05.sp)
                         }
                         Spacer(Modifier.weight(1f))
-                        Surface(color = Panel, shape = RoundedCornerShape(20.dp)) {
-                            Text("ON-DEVICE AI", Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Surface(color = Panel, shape = RoundedCornerShape(18.dp)) {
+                            Row(
+                                Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(Modifier.size(6.dp).background(if (ready) Accent else Muted, CircleShape))
+                                Text(if (ready) "AI READY" else "AI SETUP", color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
-                    Spacer(Modifier.height(15.dp))
+                    Spacer(Modifier.height(12.dp))
                     Text(
                         when (activeSection) {
-                            "Studio" -> "Long video in. Shorts out."
-                            "Highlights" -> "Your best moments."
-                            "Projects" -> "Your clip library."
-                            "Live" -> "Live activity signals."
-                            else -> "Fine-tune your clip."
+                            "Editor" -> "Edit your video"
+                            "Studio" -> "Create standout clips"
+                            "Highlights" -> "Review your best moments"
+                            "Projects" -> "Project library"
+                            else -> "Livestream tools"
                         },
-                        color = Color(0xFFF0F2E8), fontSize = 25.sp, lineHeight = 29.sp,
-                        fontWeight = FontWeight.Bold, letterSpacing = (-0.65).sp, maxLines = 2
+                        color = Color(0xFFF0F2E8), fontSize = 23.sp, lineHeight = 27.sp,
+                        fontWeight = FontWeight.Bold, letterSpacing = (-0.55).sp, maxLines = 1
                     )
                     Text(
                         when (activeSection) {
-                            "Studio" -> "Import a recording, find standout moments, and export Shorts."
-                            "Highlights" -> "Review the picks. Keep the moments worth sharing."
-                            "Projects" -> "Pick up where you left off."
-                            "Live" -> "Use public chat activity to find moments in an authorised recording."
-                            else -> "Adjust timing and framing before export."
+                            "Editor" -> if (video == null) "Import footage to start trimming and framing." else videoDisplayName
+                            "Studio" -> "Import footage and let on-device AI find the moments."
+                            "Highlights" -> "Choose, refine and export your clips."
+                            "Projects" -> "Continue editing a saved project."
+                            else -> "Capture authorised streams and inspect live signals."
                         },
-                        Modifier.padding(top = 4.dp), color = Muted, fontSize = 11.sp, lineHeight = 16.sp
+                        Modifier.padding(top = 3.dp), color = Muted, fontSize = 11.sp, maxLines = 1
                     )
                 }
             },
             bottomBar = {
                 val destinations = listOf(
-                    Triple("Studio", "New", Icons.Default.Movie),
+                    Triple("Editor", "Edit", Icons.Default.Tune),
                     Triple("Highlights", "Clips", Icons.Default.AutoAwesome),
-                    Triple("Projects", "Library", Icons.Default.FolderOpen),
-                    Triple("Live", "Live", Icons.Default.LiveTv),
-                    Triple("Editor", "Edit", Icons.Default.Tune)
+                    Triple("Projects", "Projects", Icons.Default.FolderOpen),
+                    Triple("Studio", "Create", Icons.Default.Movie),
+                    Triple("Live", "Live", Icons.Default.LiveTv)
                 )
                 NavigationBar(containerColor = Panel, contentColor = Color(0xFFF0F2E8), tonalElevation = 0.dp) {
                     destinations.forEach { (section, label, icon) ->
