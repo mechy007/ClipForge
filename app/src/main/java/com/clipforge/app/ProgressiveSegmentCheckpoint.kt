@@ -71,6 +71,7 @@ internal class ProgressiveSegmentCheckpoint(
             val output = atomic.startWrite()
             try {
                 output.write(root.toString().toByteArray(Charsets.UTF_8))
+                output.fd.sync()
                 atomic.finishWrite(output)
             } catch (failure: Exception) {
                 atomic.failWrite(output)
