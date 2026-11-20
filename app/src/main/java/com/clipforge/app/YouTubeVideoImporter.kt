@@ -39,7 +39,7 @@ object YouTubeVideoImporter {
                     }
                 } catch (error: YoutubeDLException) {
                     val detail = error.message.orEmpty()
-                    if ("403" in detail || "Forbidden" in detail) {
+                    if (YouTubeDownloadValidation.isForbidden(detail)) {
                         throw IllegalStateException(
                             "YouTube refused this download (HTTP 403). Try a different permitted recording, or import a local MP4. The bundled downloader may need updating.", error
                         )
@@ -47,11 +47,12 @@ object YouTubeVideoImporter {
                     throw error
                 }
                 val rendered = File(staging, "video.mp4")
-                check(rendered.length() > 0) { "No completed video was available to download." }
+                check(YouTubeDownloadValidation.isValidMp4(rendered)) {
+                    "Download did not produce a valid MP4. Try a lower quality or import a local video."
+                }
                 val destination = File(imports, "youtube-$videoId-$id.mp4")
                 check(rendered.renameTo(destination)) { "Could not save the downloaded video." }
-                onProgress(100)
-                Uri.fromFile(destination)
+                Uri.fromFile(destination).also { onProgress(100) }
             } finally {
                 staging.deleteRecursively()
             }
