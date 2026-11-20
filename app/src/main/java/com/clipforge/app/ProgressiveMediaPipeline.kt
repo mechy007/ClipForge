@@ -38,7 +38,7 @@ internal object ProgressiveMediaPipeline {
         val producer = launch {
             try {
                 source.produce { item ->
-                    require(item.segment.index >= 0)
+                    require(item.segment.index >= 0 && item.segment.endMs > item.segment.startMs) { "Invalid segment boundaries" }
                     require(item.file.isFile && item.file.length() > 0L) {
                         "Segment must be finalized on disk before publication"
                     }
