@@ -2,6 +2,7 @@ package com.clipforge.app
 
 import android.content.Context
 import android.net.Uri
+import android.media.MediaMetadataRetriever
 import android.provider.DocumentsContract
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -89,11 +90,25 @@ object BatchClipExporter {
                     }
                 } ?: false
             }
-            if (!verified) {
+            val playable = if (verified) withContext(Dispatchers.IO) {
+                runCatching {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, destination)
+                        val durationMs = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_DURATION
+                        )?.toLongOrNull() ?: 0L
+                        durationMs > 0L
+                    } finally {
+                        retriever.release()
+                    }
+                }.getOrDefault(false)
+            } else false
+            if (!playable) {
                 withContext(Dispatchers.IO) {
                     runCatching { DocumentsContract.deleteDocument(resolver, destination) }
                 }
-                error("$name was exported but could not be verified.")
+                error("$name was exported but is empty or not a readable MP4 with a valid duration.")
             }
 
             completed++
