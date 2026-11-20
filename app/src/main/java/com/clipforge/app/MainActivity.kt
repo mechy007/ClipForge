@@ -96,7 +96,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var transcriptLanguage by rememberSaveable { mutableStateOf("auto") }
     var targetClipDurationMs by rememberSaveable { mutableLongStateOf(30_000L) }
-    var maxHighlights by rememberSaveable { mutableIntStateOf(8) }
+    var maxHighlights by rememberSaveable { mutableIntStateOf(10) }
     var languageMenuExpanded by remember { mutableStateOf(false) }
     var preparingModel by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
@@ -260,6 +260,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     editing = null
                     message = "Offline video imported. Ready for resumable AI transcription."
                     localImportStatus = "Offline video imported successfully."
+                    activeSection = "Editor"
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -589,7 +590,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         video = imported; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null
                         editing = null
                         linkStatus = "Video imported."
-                        if (youtubeLink) activeSection = "Editor"
+                        activeSection = "Editor"
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) { linkStatus = "Download failed: ${e.localizedMessage ?: "Video import failed."}" }
@@ -628,7 +629,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 selectedClips = clips.toSet()
                                 transcriptSegments = projectDb.listTranscript(project.id)
                                 message = "Restored saved project."
-                                if (clips.isNotEmpty()) activeSection = "Highlights"
+                                activeSection = if (clips.isNotEmpty()) "Highlights" else "Editor"
                             }) { Text("Open") }
                         }
                     }
@@ -826,7 +827,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 Text("AI searches for moments around this length and keeps speech boundaries inside the selected range.", color = Muted, fontSize = 11.sp)
                 Text("MAXIMUM HIGHLIGHTS", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(8, 20, 50, 100).forEach { count ->
+                    listOf(10, 20, 50, 100).forEach { count ->
                         FilterChip(
                             selected = maxHighlights == count,
                             onClick = { maxHighlights = count },
