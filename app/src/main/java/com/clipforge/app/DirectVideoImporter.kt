@@ -2,6 +2,7 @@ package com.clipforge.app
 
 import android.content.Context
 import android.net.Uri
+import android.os.StatFs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -58,6 +59,11 @@ object DirectVideoImporter {
                 check(target.parentFile?.let { it.isDirectory || it.mkdirs() } == true) {
                     "Could not create video import directory."
                 }
+                if (length != null) {
+                    check(StatFs(target.parentFile!!.absolutePath).availableBytes > length + 1024L * 1024L) {
+                        "Not enough free storage to download this video."
+                    }
+                }
                 connection.inputStream.use { input ->
                     partial.outputStream().buffered().use { output ->
                         val buffer = ByteArray(64 * 1024)
@@ -67,6 +73,9 @@ object DirectVideoImporter {
                             val count = input.read(buffer)
                             if (count < 0) break
                             if (count == 0) continue
+                            check(StatFs(target.parentFile!!.absolutePath).availableBytes > count.toLong() + 1024L * 1024L) {
+                                "Not enough free storage to finish downloading this video."
+                            }
                             total += count
                             check(total <= MAX_BYTES) { "Video exceeds the 2 GB import limit." }
                             output.write(buffer, 0, count)
