@@ -27,10 +27,22 @@ class YouTubeDownloadValidationTest {
         }
     }
 
+    @Test fun headerOnlyFileIsRejected() {
+        val mp4 = File.createTempFile("clipforge-header-only-", ".mp4")
+        try {
+            mp4.writeBytes(byteArrayOf(0, 0, 0, 12) + "ftypisom".toByteArray())
+            assertFalse(YouTubeDownloadValidation.isValidMp4(mp4))
+        } finally {
+            mp4.delete()
+        }
+    }
+
     @Test fun completeFileTypeBoxIsAccepted() {
         val mp4 = File.createTempFile("clipforge-header-", ".mp4")
         try {
-            mp4.writeBytes(byteArrayOf(0, 0, 0, 12) + "ftypisom".toByteArray())
+            mp4.writeBytes(byteArrayOf(0, 0, 0, 12) + "ftypisom".toByteArray() +
+                byteArrayOf(0, 0, 0, 12) + "mdatdata".toByteArray() +
+                byteArrayOf(0, 0, 0, 12) + "moovmeta".toByteArray())
             assertTrue(YouTubeDownloadValidation.isValidMp4(mp4))
         } finally {
             mp4.delete()
