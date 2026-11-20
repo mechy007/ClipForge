@@ -47,6 +47,9 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
 
     fun save(index: Int, segments: List<TranscriptSegment>) {
         require(index >= 0)
+        require(segments.all { it.startMs >= 0L && it.endMs > it.startMs }) {
+            "Invalid checkpoint segment timestamps"
+        }
         val previous = chunks.put(index, segments)
         var committed = false
         try {
