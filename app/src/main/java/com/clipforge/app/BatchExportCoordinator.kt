@@ -28,6 +28,9 @@ object BatchExportCoordinator {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableStatus = MutableStateFlow(BatchExportStatus())
     val status = mutableStatus.asStateFlow()
+    // Retain verified outputs across changed selections during an interrupted batch.
+    // This is process-local, just like the coordinator's status.
+    private val verifiedBatchClips = linkedSetOf<ClipCandidate>()
 
     fun start(
         context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>,
@@ -46,7 +49,8 @@ object BatchExportCoordinator {
         // A retry may use a different selection: only count previously exported clips
         // that are still selected, and never count a duplicate more than once.
         val selectedClips = clips.distinct()
-        val alreadyCompleted = if (sameBatch) previous.completedClips.distinct().filter { it in selectedClips } else emptyList()
+        if (!sameBatch) verifiedBatchClips.clear()
+        val alreadyCompleted = if (sameBatch) verifiedBatchClips.filter { it in selectedClips } else emptyList()
         val remaining = selectedClips.filterNot { it in alreadyCompleted }
         if (remaining.isEmpty()) {
             mutableStatus.value = previous.copy(
@@ -74,7 +78,8 @@ object BatchExportCoordinator {
         scope.launch {
             try {
                 BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset, faceTrackingPath) { done, _, clip ->
-                    val verifiedClips = alreadyCompleted + remaining.take(done)
+                    verifiedBatchClips.addAll(remaining.take(done))
+                    val verifiedClips = selectedClips.filter { it in verifiedBatchClips }
                     mutableStatus.value = BatchExportStatus(
                         running = true,
                         completed = verifiedClips.size,
