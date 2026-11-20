@@ -76,8 +76,9 @@ object HighlightDetector {
         durationMs: Long,
         targetDurationMs: Long = DEFAULT_WINDOW_MS,
         audioEnergy: List<AudioEnergyWindow> = emptyList(),
-        sceneCuts: List<Long> = emptyList()
-    ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs, audioEnergy, sceneCuts)
+        sceneCuts: List<Long> = emptyList(),
+        maxClips: Int = 8
+    ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs, audioEnergy, sceneCuts, maxClips)
 
     fun detectWithWeights(
         segments: List<TranscriptSegment>,
@@ -85,7 +86,8 @@ object HighlightDetector {
         weights: RankingWeights,
         targetDurationMs: Long = DEFAULT_WINDOW_MS,
         audioEnergy: List<AudioEnergyWindow> = emptyList(),
-        sceneCuts: List<Long> = emptyList()
+        sceneCuts: List<Long> = emptyList(),
+        maxClips: Int = 8
     ): List<ClipCandidate> {
         if (segments.isEmpty() || durationMs <= 0L) return emptyList()
         val sorted = segments.filter {
@@ -144,7 +146,7 @@ object HighlightDetector {
                     intersectionOverUnion(candidate.startMs, candidate.endMs, existing.startMs, existing.endMs) > DEDUPE_IOU
                 }) chosen += candidate
         }
-        return chosen.sortedByDescending { it.score }.take(8)
+        return chosen.sortedByDescending { it.score }.take(maxClips.coerceIn(1, 100))
     }
 
     fun intersectionOverUnion(aStart: Long, aEnd: Long, bStart: Long, bEnd: Long): Double {

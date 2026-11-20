@@ -96,6 +96,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var transcriptLanguage by rememberSaveable { mutableStateOf("auto") }
     var targetClipDurationMs by rememberSaveable { mutableLongStateOf(30_000L) }
+    var maxHighlights by rememberSaveable { mutableIntStateOf(8) }
     var languageMenuExpanded by remember { mutableStateOf(false) }
     var preparingModel by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
@@ -813,6 +814,18 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                 }
                 Text("AI searches for moments around this length and keeps speech boundaries inside the selected range.", color = Muted, fontSize = 11.sp)
+                Text("MAXIMUM HIGHLIGHTS", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(8, 20, 50, 100).forEach { count ->
+                        FilterChip(
+                            selected = maxHighlights == count,
+                            onClick = { maxHighlights = count },
+                            label = { Text("$count clips", fontSize = 10.sp) },
+                            enabled = !analyzing
+                        )
+                    }
+                }
+                Text("For long recordings, choose up to 100 candidates. Actual results depend on available speech and distinct moments.", color = Muted, fontSize = 11.sp)
                 Button(onClick = {
                     val src = video ?: return@Button
                     scope.launch {
@@ -845,7 +858,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                             message = "Ranking speech, silence and scene changes…"
                             val found = withContext(Dispatchers.Default) {
-                                HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts)
+                                HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights)
                             }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
