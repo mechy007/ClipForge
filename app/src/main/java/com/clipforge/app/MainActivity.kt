@@ -581,7 +581,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     try {
                         val imported = if (youtubeLink) {
                             YouTubeVideoImporter.download(context, url, youtubeQuality) { percent ->
-                                scope.launch { linkStatus = "Downloading and preparing video · $percent%" }
+                                scope.launch { if (importingLink && !linkStatus.startsWith("Download failed:")) linkStatus = "Downloading and preparing video · $percent%" }
                             }
                         } else DirectVideoImporter.download(context, url) { p ->
                             if (p.downloadedBytes % (1024L * 1024L) < 64L * 1024L) scope.launch { linkStatus = "Downloaded ${p.downloadedBytes / 1_048_576} MB" }
@@ -592,7 +592,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         if (youtubeLink) activeSection = "Editor"
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
-                    } catch (e: Exception) { linkStatus = e.localizedMessage ?: "Video import failed." }
+                    } catch (e: Exception) { linkStatus = "Download failed: ${e.localizedMessage ?: "Video import failed."}" }
                     finally { importingLink = false }
                 }
             }, enabled = linkText.isNotBlank() && !importingLink && !analyzing, modifier = Modifier.fillMaxWidth()) {
@@ -724,7 +724,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
                     Text("START A PROJECT", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
-                    Text(if (video == null) "Import your long-form video" else "Your video is ready", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    Text(if (video == null) "Import your long-form video" else if (linkStatus.startsWith("Download failed:")) "Previously selected video" else "Your video is ready", fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Text("Podcasts, gameplay, interviews and more. Choose a video stored on your phone.", color = Muted, fontSize = 12.sp)
                     Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
                         Icon(Icons.Default.FolderOpen, null); Text(if (video == null) "  Import video" else "  Change video")
