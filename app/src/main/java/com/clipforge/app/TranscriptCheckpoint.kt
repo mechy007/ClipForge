@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import android.content.Context
+import android.util.AtomicFile
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.provider.DocumentsContract
@@ -41,7 +42,8 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
 
     fun save(index: Int, segments: List<TranscriptSegment>) {
         require(index >= 0)
-        chunks[index] = segments
+        val previous = chunks.put(index, segments)
+        try {
         val root = JSONObject().put("fingerprint", fingerprint)
         val rows = JSONArray()
         chunks.forEach { (chunkIndex, items) ->
@@ -53,11 +55,18 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
         }
         root.put("chunks", rows)
         file.parentFile?.mkdirs()
-        val temp = File(file.parentFile, file.name + ".tmp")
-        temp.writeText(root.toString())
-        if (!temp.renameTo(file)) {
-            temp.delete()
-            error("Could not atomically save transcription checkpoint")
+        val atomic = AtomicFile(file)
+        val output = atomic.startWrite()
+        try {
+            output.write(root.toString().toByteArray(Charsets.UTF_8))
+            atomic.finishWrite(output)
+        } catch (failure: Exception) {
+            atomic.failWrite(output)
+            throw failure
+        }
+        } catch (failure: Exception) {
+            if (previous == null) chunks.remove(index) else chunks[index] = previous
+            throw failure
         }
     }
 
