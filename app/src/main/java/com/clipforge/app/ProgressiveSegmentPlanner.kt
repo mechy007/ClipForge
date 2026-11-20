@@ -25,7 +25,7 @@ internal object ProgressiveSegmentPlanner {
         require(count <= Int.MAX_VALUE) { "Too many segments" }
         return (0 until count.toInt()).map { index ->
             val start = index.toLong() * segmentMs
-            ProgressiveSegment(index, start, minOf(durationMs, start + segmentMs))
+            ProgressiveSegment(index, start, start + minOf(segmentMs, durationMs - start))
         }
     }
 
