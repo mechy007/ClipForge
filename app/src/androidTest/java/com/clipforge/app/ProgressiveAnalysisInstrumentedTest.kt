@@ -190,4 +190,33 @@ class ProgressiveAnalysisInstrumentedTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun completedSignalsRestoreTranscriptAndEnergyForEditor() {
+        val dir = directory()
+        try {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val fingerprint = "complete-editor-signals"
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(fingerprint.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            val checkpoint = ProgressiveSegmentCheckpoint(
+                File(dir, "progressive-checkpoint-$digest.json"), fingerprint
+            ).load()
+            val span = ProgressiveSegment(0, 0L, 60_000L)
+            ProgressiveSignalIntegration.persist(
+                ProgressiveSignalStore(File(dir, "signals"), fingerprint),
+                ProgressiveTranscriptionSignals(
+                    span,
+                    listOf(TranscriptSegment(200L, 1_000L, "great moment")),
+                    listOf(AudioEnergyWindow(200L, 1_000L, 0.5f, 0.8f))
+                )
+            )
+            checkpoint.markFinalized(0)
+            checkpoint.markProcessed(0)
+            val restored = ProgressiveAnalysisSession(context, fingerprint, dir)
+                .completedSignals(60_000L)
+            assertEquals("great moment", restored.transcript.single().text)
+            assertEquals(0.8f, restored.audioEnergy.single().peak, 0f)
+        } finally { dir.deleteRecursively() }
+    }
+
 }
