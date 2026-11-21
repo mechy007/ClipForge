@@ -317,33 +317,46 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var localImportStatus by remember { mutableStateOf("") }
     val offlineImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && !localImportBusy) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             localImportBusy = true
-            localImportStatus = "Copying video into offline project storage…"
+            localImportStatus = "Starting background import…"
+            val request = androidx.work.OneTimeWorkRequestBuilder<BackgroundVideoImportWorker>()
+                .setInputData(androidx.work.workDataOf(BackgroundVideoImportWorker.SOURCE_URI to uri.toString()))
+                .build()
+            val manager = androidx.work.WorkManager.getInstance(context)
+            manager.enqueueUniqueWork("clipforge-offline-import", androidx.work.ExistingWorkPolicy.REPLACE, request)
             scope.launch {
-                try {
-                    val imported = LocalVideoImporter.import(context, uri) { progress ->
-                        val percent = progress.totalBytes?.takeIf { it > 0L }
-                            ?.let { (progress.copiedBytes * 100L / it).coerceIn(0L, 100L) }
-                        scope.launch {
-                            localImportStatus = percent?.let { "Importing video · $it%" }
-                                ?: "Importing video · ${progress.copiedBytes / (1024L * 1024L)} MB"
+                manager.getWorkInfoByIdFlow(request.id).collect { info ->
+                    if (info == null) return@collect
+                    when (info.state) {
+                        androidx.work.WorkInfo.State.RUNNING, androidx.work.WorkInfo.State.ENQUEUED -> {
+                            val percent = info.progress.getInt(BackgroundVideoImportWorker.PROGRESS, -1)
+                            localImportStatus = if (percent >= 0) "Importing video · $percent%" else "Importing video in background…"
                         }
+                        androidx.work.WorkInfo.State.SUCCEEDED -> {
+                            val result = info.outputData.getString(BackgroundVideoImportWorker.RESULT_URI)
+                            if (result != null) {
+                                video = Uri.parse(result)
+                                duration = 0L
+                                clips = emptyList()
+                                transcriptSegments = emptyList()
+                                activeProjectId = null
+                                editing = null
+                                message = "Offline video imported. Ready for resumable AI transcription."
+                                localImportStatus = "Offline video imported successfully."
+                                activeSection = "Editor"
+                            }
+                            localImportBusy = false
+                        }
+                        androidx.work.WorkInfo.State.FAILED, androidx.work.WorkInfo.State.CANCELLED -> {
+                            localImportStatus = info.outputData.getString(BackgroundVideoImportWorker.ERROR)
+                                ?: "Background import stopped."
+                            localImportBusy = false
+                        }
+                        else -> Unit
                     }
-                    video = imported
-                    duration = 0L
-                    clips = emptyList()
-                    transcriptSegments = emptyList()
-                    activeProjectId = null
-                    editing = null
-                    message = "Offline video imported. Ready for resumable AI transcription."
-                    localImportStatus = "Offline video imported successfully."
-                    activeSection = "Editor"
-                } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    localImportStatus = e.localizedMessage ?: "Offline video import failed."
-                } finally {
-                    localImportBusy = false
                 }
             }
         }
