@@ -178,7 +178,7 @@ object ClipExporter {
                 try {
                     runBlocking {
                         StreamerGameplayRenderer.render(
-                            context, source, output, startMs, endMs, splitFacecamRegion, captionCues, captionPreset, captionWords, gameplayRegion
+                            context, source, output, startMs, endMs, splitFacecamRegion, captionCues, captionPreset, captionWords, gameplayRegion, faceTrackingPath
                         )
                     }
                     copyToDestination(context, output, destination, onFinished)

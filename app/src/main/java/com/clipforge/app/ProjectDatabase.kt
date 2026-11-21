@@ -66,13 +66,15 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
         sourceUri: String,
         durationMs: Long,
         clips: List<ClipCandidate>,
-        transcript: List<TranscriptSegment>
+        transcript: List<TranscriptSegment>,
+        approved: List<ClipCandidate> = emptyList()
     ): Long {
         val db = writableDatabase
         db.beginTransaction()
         try {
             val id = saveProject(title, sourceUri, durationMs, "completed")
             saveHighlights(id, clips)
+            approved.forEach { updateHighlightReview(id, it.startMs, it.endMs, "APPROVED") }
             saveTranscript(id, transcript)
             db.setTransactionSuccessful()
             return id

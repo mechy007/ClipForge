@@ -58,7 +58,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -108,6 +107,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var importingLink by remember { mutableStateOf(false) }
     var sectionPreviews by remember { mutableStateOf<List<DownloadWhileAnalyzing.SectionPreview>>(emptyList()) }
     var sectionPreview by remember { mutableStateOf<DownloadWhileAnalyzing.SectionPreview?>(null) }
+    var earlySelections by remember { mutableStateOf<DownloadClipSelections?>(null) }
+    val previewCache = remember { CreatorPreviewCache() }
+    DisposableEffect(previewCache) { onDispose { previewCache.close() } }
     var duration by remember { mutableLongStateOf(0L) }
     var ready by remember { mutableStateOf(WhisperModelManager.isModelAvailable(context)) }
     var transcriptLanguage by rememberSaveable { mutableStateOf("auto") }
@@ -222,6 +224,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var faceTrackingBusy by remember { mutableStateOf(false) }
     var faceTrackingMessage by remember { mutableStateOf("Face tracking analyzes sampled frames on-device.") }
     var faceTrackingPath by remember { mutableStateOf<List<CropFocus>>(emptyList()) }
+    var splitTracking by remember(video, splitRegion) { mutableStateOf<List<CropFocus>>(emptyList()) }
+    var trackingSplitFace by remember(video, splitRegion) { mutableStateOf(false) }
+    val exportTracking = if (splitSelected) splitTracking else faceTrackingPath
+
 
     LaunchedEffect(video) {
         editorStartMs = 0L
@@ -342,7 +348,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             val cues = if (burnCaptions) CaptionTrack.fromTranscript(captionTranscript, clip.startMs, clip.endMs) else emptyList()
             ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
                 aspectRatio = exportAspectRatio,
-                faceTrackingPath = faceTrackingPath,
+                faceTrackingPath = exportTracking,
                 splitFacecamRegion = splitRegion,
                 gameplayRegion = splitGameplay,
                 captionCues = cues,
@@ -371,7 +377,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 context, treeUri, source, chosen, exportAspectRatio,
                 if (burnCaptions) captionTranscript else emptyList(),
                 runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
-                faceTrackingPath = faceTrackingPath,
+                faceTrackingPath = exportTracking,
                 splitFacecamRegion = splitRegion,
                 gameplayRegion = splitGameplay
             )
@@ -714,6 +720,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             try {
                                 linkStatus = "Reading recording duration…"
                                 val recordingMs = YouTubeDurationProbe.durationMs(context, url)
+                                val videoId = YouTubeLiveApiClient.parseVideoId(url)
+                                val pendingSelections = DownloadClipSelections(creatorSettings,
+                                    "section-review-v2:$videoId:$quality:$recordingMs:$language")
+                                earlySelections = pendingSelections
                                 val preferences = withContext(Dispatchers.IO) { projectDb.creatorClipPreferences() }
                                 val results = DownloadWhileAnalyzing.runYouTubeSections(
                                     context = context,
@@ -730,24 +740,33 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                         linkStatus = "Sections downloaded: $completed / $total"
                                     }
                                 )
+                                val approved = if (results.sectionTimelineUsable) {
+                                    pendingSelections.selected().filter { it.startMs in 0L until it.endMs && it.endMs <= results.durationMs }
+                                } else emptyList()
+                                val finalClips = (approved + results.highlights.filter { candidate ->
+                                    approved.none { pick ->
+                                        HighlightDetector.overlapOfShorter(pick.startMs, pick.endMs, candidate.startMs, candidate.endMs) > .65
+                                    }
+                                }).take(batchLimit)
                                 val project = withContext(Dispatchers.IO) {
                                     val id = projectDb.saveCompletedAnalysis(
-                                        "YouTube ${YouTubeLiveApiClient.parseVideoId(url)}", results.source.toString(),
-                                        results.durationMs, results.highlights, results.transcript
+                                        "YouTube $videoId", results.source.toString(),
+                                        results.durationMs, finalClips, results.transcript, approved
                                     )
                                     id to projectDb.listProjects()
                                 }
+                                if (results.sectionTimelineUsable) pendingSelections.clear()
                                 video = results.source
                                 duration = results.durationMs
-                                clips = results.highlights
-                                selectedClips = results.highlights.take(batchLimit).toSet()
+                                clips = finalClips
+                                selectedClips = finalClips.toSet()
                                 transcriptSegments = results.transcript
-                                reviewed = emptyMap()
+                                reviewed = approved.associateWith { ClipReviewDecision.APPROVED }
                                 editing = null
                                 activeProjectId = project.first
                                 savedProjects = project.second
-                                linkStatus = "Recording imported and analyzed · ${results.highlights.size} highlights"
-                                activeSection = if (results.highlights.isNotEmpty() && !splitSelected) "Highlights" else "Studio"
+                                linkStatus = "Recording imported and analyzed · ${finalClips.size} highlights"
+                                activeSection = if (finalClips.isNotEmpty() && !splitSelected) "Highlights" else "Studio"
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (e: Exception) {
@@ -755,6 +774,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             } finally {
                                 sectionPreview = null
                                 sectionPreviews = emptyList()
+                                earlySelections = null
                                 importingLink = false
                             }
                         }
@@ -778,19 +798,37 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             sectionPreview?.let { preview ->
                 var error by remember(preview) { mutableStateOf<String?>(null) }
+                var start by remember(preview) { mutableLongStateOf(preview.clip.startMs) }
+                var end by remember(preview) { mutableLongStateOf(preview.clip.endMs) }
+                var playback by remember(preview) { mutableStateOf(preview.clip) }
                 AlertDialog(
                     onDismissRequest = { sectionPreview = null },
                     title = { Text(preview.clip.title) },
                     text = {
-                        Column {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
                             Text("Source preview · final layout is available after import")
                             VideoPreview(preview.source, onDuration = {}, onError = { error = it },
                                 retryKey = 0, aspectRatio = 16f / 9f,
-                                startAtMs = preview.clip.startMs, endAtMs = preview.clip.endMs)
+                                startAtMs = playback.startMs, endAtMs = playback.endMs)
+                            Text("Start · ${time(preview.sourceOffsetMs + start)}")
+                            Slider(start.toFloat(), { start = it.toLong() },
+                                onValueChangeFinished = { playback = playback.copy(startMs = start, endMs = end) },
+                                valueRange = preview.clip.startMs.toFloat()..(end - 1000L).coerceAtLeast(preview.clip.startMs).toFloat())
+                            Text("End · ${time(preview.sourceOffsetMs + end)}")
+                            Slider(end.toFloat(), { end = it.toLong() },
+                                onValueChangeFinished = { playback = playback.copy(startMs = start, endMs = end) },
+                                valueRange = (start + 1000L).coerceAtMost(preview.clip.endMs).toFloat()..preview.clip.endMs.toFloat())
                             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         }
                     },
-                    confirmButton = { TextButton(onClick = { sectionPreview = null }) { Text("Close") } }
+                    confirmButton = {
+                        TextButton(enabled = end - start >= 1000L && earlySelections != null, onClick = {
+                            earlySelections?.add(preview.clip.copy(startMs = preview.sourceOffsetMs + start,
+                                endMs = preview.sourceOffsetMs + end, reason = "Selected during download."))
+                            sectionPreview = null
+                        }) { Text("Approve this cut") }
+                    },
+                    dismissButton = { TextButton(onClick = { sectionPreview = null }) { Text("Close") } }
                 )
             }
             if (linkStatus.isNotBlank()) Text(linkStatus, color = Muted, fontSize = 11.sp)
@@ -1080,6 +1118,37 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     },
                                     enabled = duration > 0L && !analyzing
                                 ) { Text("Preview split") }
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    if (splitTracking.isNotEmpty()) {
+                                        splitTracking = emptyList()
+                                    } else {
+                                        val source = video
+                                        if (source != null) scope.launch {
+                                            trackingSplitFace = true
+                                            try {
+                                                val tracked = FaceTrackingAnalyzer.analyze(context, source, 0L, duration, facecam = region)
+                                                if (video == source && facecamRegion == region) {
+                                                    splitTracking = tracked
+                                                    facecamDetectionMessage = if (tracked.isEmpty()) "No stable face track was found. Using the selected crop."
+                                                        else "Face tracking enabled inside the streamer panel."
+                                                }
+                                            } catch (cancelled: CancellationException) {
+                                                throw cancelled
+                                            } catch (_: Exception) {
+                                                facecamDetectionMessage = "Face tracking unavailable. Using the selected crop."
+                                            } finally { trackingSplitFace = false }
+                                        }
+                                    }
+                                },
+                                enabled = !trackingSplitFace && !analyzing && !importingLink && duration > 0L
+                            ) {
+                                Text(when {
+                                    trackingSplitFace -> "Scanning for streamer…"
+                                    splitTracking.isNotEmpty() -> "Lock facecam crop"
+                                    else -> "Follow streamer’s face"
+                                })
                             }
                             OutlinedButton(onClick = { adjustGameplay = !adjustGameplay }) {
                                 Text(if (adjustGameplay) "Done adjusting gameplay" else "Adjust gameplay crop")
@@ -1428,9 +1497,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 } else emptyList()
                                 when {
                                     splitSelected && splitRegion == null -> Text("Set the facecam region in Studio to preview this layout.")
-                                    splitSelected || faceTrackingPath.isNotEmpty() || cues.isNotEmpty() -> {
-                                        RenderedClipPreview(source, clip, exportAspectRatio, faceTrackingPath, splitRegion,
-                                            cues, CaptionPreset.valueOf(captionPreset), words, splitGameplay)
+                                    splitSelected || exportTracking.isNotEmpty() || cues.isNotEmpty() -> {
+                                        RenderedClipPreview(source, clip, exportAspectRatio, exportTracking, splitRegion,
+                                            cues, CaptionPreset.valueOf(captionPreset), words, splitGameplay, previewCache)
                                     }
                                     else -> {
                                         var clipPreviewError by remember(source, clip) { mutableStateOf<String?>(null) }
@@ -1625,13 +1694,22 @@ private fun RenderedClipPreview(
     captions: List<CaptionCue>,
     preset: CaptionPreset,
     words: List<TimedWord>,
-    gameplayRegion: StreamRegion?
+    gameplayRegion: StreamRegion?,
+    cache: CreatorPreviewCache
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var retry by remember { mutableIntStateOf(0) }
-    var preview by remember(source, clip, aspect, tracking, region, captions, preset, words, gameplayRegion, retry) { mutableStateOf<Uri?>(null) }
-    var error by remember(source, clip, aspect, tracking, region, captions, preset, words, gameplayRegion, retry) { mutableStateOf<String?>(null) }
-    LaunchedEffect(source, clip, aspect, tracking, region, captions, preset, words, gameplayRegion, retry) {
+    val key = CreatorPreviewCache.Key(source, clip.startMs, clip.endMs, aspect, tracking, region, gameplayRegion, captions, preset, words)
+    var preview by remember(key, retry) { mutableStateOf<Uri?>(null) }
+    var error by remember(key, retry) { mutableStateOf<String?>(null) }
+    LaunchedEffect(key, retry) {
+        if (retry == 0) {
+            val cached = cache.get(key)
+            if (cached != null) {
+                preview = Uri.fromFile(cached)
+                return@LaunchedEffect
+            }
+        }
         var file: File? = null
         try {
             val output = File.createTempFile("clip-preview-", ".mp4", context.cacheDir)
@@ -1650,8 +1728,8 @@ private fun RenderedClipPreview(
                     }
                 )
             }
+            if (cache.keep(key, output)) file = null
             preview = uri
-            awaitCancellation()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {

@@ -21,7 +21,8 @@ object FaceTrackingAnalyzer {
         source: Uri,
         startMs: Long,
         endMs: Long,
-        targetAspectRatio: Float = 9f / 16f
+        targetAspectRatio: Float = 9f / 16f,
+        facecam: StreamRegion? = null
     ): List<CropFocus> = withContext(Dispatchers.IO) {
         require(startMs >= 0L && endMs > startMs) { "Choose a valid clip range." }
         val detector = FaceDetection.getClient(
@@ -60,7 +61,12 @@ object FaceTrackingAnalyzer {
                     ) else original
                     try {
                         val faces = Tasks.await(detector.process(InputImage.fromBitmap(frame, 0)))
-                        val primary = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
+                        val primary = faces.asSequence().filter { face ->
+                            facecam == null || (
+                                face.boundingBox.exactCenterX() / frame.width in facecam.left..facecam.right &&
+                                face.boundingBox.exactCenterY() / frame.height in facecam.top..facecam.bottom
+                            )
+                        }.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
                         if (primary != null) {
                             val box = primary.boundingBox
                             val w = frame.width.toFloat()
@@ -85,6 +91,16 @@ object FaceTrackingAnalyzer {
             retriever.release()
             detector.close()
         }
-        FaceTrackingPlanner.plan(observations, targetAspectRatio, sourceAspectRatio = sourceAspect)
+        if (facecam == null) {
+            FaceTrackingPlanner.plan(observations, targetAspectRatio, sourceAspectRatio = sourceAspect)
+        } else {
+            var x = (facecam.left + facecam.right) / 2
+            var y = (facecam.top + facecam.bottom) / 2
+            observations.takeIf { it.size >= 2 }.orEmpty().map { observation ->
+                x += (observation.face.centerX - x) * .35f
+                y += (observation.face.centerY - y) * .35f
+                CropFocus(observation.timeMs, x, y, facecam.width, facecam.height)
+            }
+        }
     }
 }

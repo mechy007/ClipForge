@@ -25,7 +25,8 @@ internal object DownloadWhileAnalyzing {
         val source: Uri,
         val durationMs: Long,
         val highlights: List<ClipCandidate>,
-        val transcript: List<TranscriptSegment>
+        val transcript: List<TranscriptSegment>,
+        val sectionTimelineUsable: Boolean
     )
 
     /** Returns the reviewed timeline and the playable recording it belongs to as one result. */
@@ -43,7 +44,7 @@ internal object DownloadWhileAnalyzing {
         onDownloadProgress: (completed: Int, total: Int) -> Unit = { _, _ -> }
     ): ImportedAnalysis {
         val id = YouTubeLiveApiClient.parseVideoId(url)
-        val fingerprint = "youtube:$id:$height:$durationMs:${language ?: "auto"}"
+        val fingerprint = "youtube-timeline-v2:$id:$height:$durationMs:${language ?: "auto"}"
         val scopedDirectory = File(stateDirectory, "youtube-$id-$height-$durationMs")
         val sections = File(scopedDirectory, "downloaded-sections")
         val importedFile = File(scopedDirectory, "recording.mp4")
@@ -70,10 +71,20 @@ internal object DownloadWhileAnalyzing {
                         val energy = signals.audioEnergy.map {
                             it.copy(startMs = it.startMs - span.startMs, endMs = it.endMs - span.startMs)
                         }
-                        val best = withContext(Dispatchers.Default) {
-                            HighlightDetector.detect(text, length, targetClipDurationMs, energy, maxClips = 1).firstOrNull()
+                        val speech = withContext(Dispatchers.Default) {
+                            HighlightDetector.detect(text, length, targetClipDurationMs, energy, maxClips = 3)
+                                .firstOrNull { it.startMs >= 500L && it.endMs <= length - 500L }
                         }
-                        if (best != null && best.startMs >= 500L && best.endMs <= length - 500L) {
+                        val best = speech ?: try {
+                            val visual = VisualUnderstandingEngine.analyze(context, Uri.fromFile(file.file), length)
+                            VisualOnlyHighlightDetector.detect(visual, length, targetClipDurationMs, 3)
+                                .firstOrNull { it.startMs >= 500L && it.endMs <= length - 500L }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (best != null) {
                             withContext(Dispatchers.Main) {
                                 onPreview(SectionPreview(Uri.fromFile(file.file), best, span.startMs))
                             }
@@ -108,7 +119,7 @@ internal object DownloadWhileAnalyzing {
             val clips = withContext(Dispatchers.Default) {
                 rankVideoHighlights(full.segments, full.audioEnergy, visual, fullDuration, targetClipDurationMs, 10, preferences)
             }
-            return ImportedAnalysis(fullSource, fullDuration, clips, full.segments)
+            return ImportedAnalysis(fullSource, fullDuration, clips, full.segments, sectionTimelineUsable = false)
         }
         onStatus("Checking motion and scene changes…")
         val visual = VisualUnderstandingEngine.analyze(context, source, playableDuration)
@@ -121,7 +132,7 @@ internal object DownloadWhileAnalyzing {
             val end = minOf(segment.endMs, playableDuration)
             if (segment.startMs < end) segment.moveToSource(0L, end) else null
         }
-        return ImportedAnalysis(source, playableDuration, clips, transcript)
+        return ImportedAnalysis(source, playableDuration, clips, transcript, sectionTimelineUsable = true)
     }
 
     suspend fun run(
