@@ -11,6 +11,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -37,7 +39,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -998,7 +1004,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     enabled = duration > 0L && !analyzing
                                 ) { Text("Preview split") }
                             }
-                            if (adjustFacecam) FacecamRegionControls(region) { facecamRegion = it }
+                            if (adjustFacecam) {
+                                video?.let { source -> FacecamRegionFrame(source, duration / 2, region) }
+                                FacecamRegionControls(region) { facecamRegion = it }
+                            }
                         }
                     }
                 }
@@ -1350,6 +1359,40 @@ private fun VerticalLayoutChoices(choice: String?, enabled: Boolean, onChange: (
             selected = choice == "split", onClick = { onChange("split") },
             enabled = enabled, label = { Text("50/50 · streamer on top, gameplay below") }
         )
+    }
+}
+
+@Composable
+private fun FacecamRegionFrame(source: Uri, timeMs: Long, region: StreamRegion) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val frame by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, source, timeMs) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(context, source)
+                    val bitmap = if (Build.VERSION.SDK_INT >= 27) {
+                        retriever.getScaledFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST, 640, 640)
+                    } else {
+                        retriever.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    }
+                    bitmap?.asImageBitmap()
+                } finally {
+                    retriever.release()
+                }
+            }.getOrNull()
+        }
+    }
+    frame?.let { bitmap ->
+        Box(Modifier.fillMaxWidth().aspectRatio(bitmap.width.toFloat() / bitmap.height)) {
+            Image(bitmap, contentDescription = "Original frame with selected facecam area", modifier = Modifier.fillMaxSize())
+            Canvas(Modifier.matchParentSize()) {
+                val origin = Offset(region.left * size.width, region.top * size.height)
+                val area = Size(region.width * size.width, region.height * size.height)
+                drawRect(Color.Black, topLeft = origin, size = area, style = Stroke(6.dp.toPx()))
+                drawRect(Accent, topLeft = origin, size = area, style = Stroke(3.dp.toPx()))
+            }
+        }
     }
 }
 

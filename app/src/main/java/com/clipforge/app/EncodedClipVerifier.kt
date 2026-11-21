@@ -35,12 +35,17 @@ internal object EncodedClipVerifier {
                 "The saved MP4 is missing audio."
             }
             if (decodeFrame) {
-                val firstFrame = if (Build.VERSION.SDK_INT >= 27) {
-                    metadata.getScaledFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 64, 64)
-                } else {
-                    metadata.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                fun decode(timeUs: Long, mode: Int) {
+                    val frame = if (Build.VERSION.SDK_INT >= 27) {
+                        metadata.getScaledFrameAtTime(timeUs, mode, 64, 64)
+                    } else {
+                        metadata.getFrameAtTime(timeUs, mode)
+                    }
+                    checkNotNull(frame) { "A frame in the saved MP4 could not be decoded." }.recycle()
                 }
-                checkNotNull(firstFrame) { "The first frame of the saved MP4 cannot be decoded." }.recycle()
+                decode(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                decode((actual - 100L).coerceAtLeast(0L) * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+
             }
         }
     }

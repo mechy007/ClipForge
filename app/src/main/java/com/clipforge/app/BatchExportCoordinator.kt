@@ -23,26 +23,12 @@ data class BatchExportStatus(
 
 /**
  * Process-scoped coordinator keeps a batch alive across Activity/Compose recreation.
- * It intentionally does not claim to survive Android process death.
+ * A restarted batch uses saved document URIs when the source exposes a stable revision.
  */
 object BatchExportCoordinator {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableStatus = MutableStateFlow(BatchExportStatus())
     val status = mutableStatus.asStateFlow()
-    // Retain verified outputs across changed selections during an interrupted batch.
-    // This is process-local, just like the coordinator's status.
-    private val verifiedBatchRanges = linkedSetOf<Pair<Long, Long>>()
-    private var verifiedSettings: ExportSettings? = null
-
-    private data class ExportSettings(
-        val source: String,
-        val folder: String,
-        val aspectRatio: Float,
-        val transcript: List<TranscriptSegment>,
-        val captionPreset: CaptionPreset,
-        val faceTrackingPath: List<CropFocus>,
-        val splitFacecamRegion: StreamRegion?
-    )
 
     fun start(
         context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>,
@@ -55,16 +41,8 @@ object BatchExportCoordinator {
         val previous = mutableStatus.value
         if (previous.running) return
 
-        val settings = ExportSettings(
-            source.toString(), folder.toString(), aspectRatio,
-            transcript.toList(), captionPreset, faceTrackingPath.toList(), splitFacecamRegion
-        )
-        val retryingInterruptedBatch = previous.retryAvailable
-        // Never reuse outputs after the user changes captions or crop tracking.
-        val sameBatch = retryingInterruptedBatch && verifiedSettings == settings
-        // A retry may use a different selection: only count previously exported clips
-        // that are still selected, and never count a duplicate more than once.
         val selectedClips = clips.toList()
+        if (selectedClips.isEmpty()) return
         if (selectedClips.size > BatchClipExporter.MAX_CLIPS_PER_BATCH) {
             mutableStatus.value = previous.copy(message = "Select up to ${BatchClipExporter.MAX_CLIPS_PER_BATCH} clips per batch.")
             return
@@ -72,60 +50,41 @@ object BatchExportCoordinator {
         require(selectedClips.distinctBy { it.startMs to it.endMs }.size == selectedClips.size) {
             "Duplicate highlight ranges cannot be exported in the same batch."
         }
-        if (!sameBatch) verifiedBatchRanges.clear()
-        verifiedSettings = settings
-        val alreadyCompleted = if (sameBatch) selectedClips.filter { (it.startMs to it.endMs) in verifiedBatchRanges } else emptyList()
-        val remaining = selectedClips.filterNot { (it.startMs to it.endMs) in verifiedBatchRanges }
-        if (remaining.isEmpty()) {
-            mutableStatus.value = previous.copy(
-                running = false,
-                retryAvailable = false,
-                completed = alreadyCompleted.size,
-                completedClips = alreadyCompleted,
-                total = selectedClips.size,
-                message = if (alreadyCompleted.isEmpty()) "No highlights were selected."
-                    else "All selected clips have already been exported and verified."
-            )
-            return
-        }
 
         mutableStatus.value = BatchExportStatus(
             running = true,
-            completed = alreadyCompleted.size,
             total = selectedClips.size,
-            message = if (alreadyCompleted.isNotEmpty()) "Resuming export · ${remaining.size} clip(s) remaining…" else "Exporting ${remaining.size} selected clip(s)…",
+            message = "Checking and exporting ${selectedClips.size} selected clip(s)…",
             sourceUri = source.toString(),
             folderUri = folder.toString(),
-            aspectRatio = aspectRatio,
-            completedClips = alreadyCompleted
+            aspectRatio = aspectRatio
         )
         val appContext = context.applicationContext
         scope.launch {
             try {
-                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion) { done, _, clip ->
-                    verifiedBatchRanges.add(clip.startMs to clip.endMs)
-                    val verifiedClips = selectedClips.filter { (it.startMs to it.endMs) in verifiedBatchRanges }
+                val verifiedClips = mutableListOf<ClipCandidate>()
+                BatchClipExporter.exportAll(appContext, folder, source, selectedClips, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion) { done, _, clip ->
+                    verifiedClips += clip
                     mutableStatus.value = BatchExportStatus(
                         running = true,
-                        completed = verifiedClips.size,
+                        completed = done,
                         total = selectedClips.size,
                         message = "Exporting ${verifiedClips.size} / ${selectedClips.size} · ${clip.title}",
                         sourceUri = source.toString(),
                         folderUri = folder.toString(),
                         aspectRatio = aspectRatio,
-                        completedClips = verifiedClips
+                        completedClips = verifiedClips.toList()
                     )
                 }
-                val completedClips = alreadyCompleted + remaining
                 mutableStatus.value = BatchExportStatus(
                     running = false,
-                    completed = completedClips.size,
+                    completed = verifiedClips.size,
                     total = selectedClips.size,
-                    message = "Batch export complete · ${completedClips.size} clips saved and verified. Source video kept for safety.",
+                    message = "Batch export complete · ${verifiedClips.size} clips saved and verified. Source video kept for safety.",
                     sourceUri = source.toString(),
                     folderUri = folder.toString(),
                     aspectRatio = aspectRatio,
-                    completedClips = completedClips
+                    completedClips = verifiedClips.toList()
                 )
             } catch (error: Exception) {
                 mutableStatus.value = mutableStatus.value.copy(

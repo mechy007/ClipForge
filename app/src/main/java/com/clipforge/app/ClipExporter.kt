@@ -37,7 +37,7 @@ object ClipExporter {
             try {
                 check(source.isFile && source.length() > 0L) { "The render did not produce a video." }
                 verify(source)
-                val stream = context.contentResolver.openOutputStream(destination, "w")
+                val stream = context.contentResolver.openOutputStream(destination, "wt")
                     ?: error("Could not open the selected save location.")
                 stream.use { target -> source.inputStream().use { it.copyTo(target) } }
                 mainHandler.post { onFinished(true, "Clip exported successfully.") }

@@ -38,22 +38,15 @@ object BatchClipExporter {
         val resolver = context.contentResolver
         val treeDocumentId = DocumentsContract.getTreeDocumentId(folder)
         val parentDocument = DocumentsContract.buildDocumentUriUsingTree(folder, treeDocumentId)
-        val sourceCache = if ((faceTrackingPath.isNotEmpty() || splitFacecamRegion != null) && source.scheme != "file") {
-            withContext(Dispatchers.IO) { java.io.File.createTempFile("clipforge-batch-", ".media", context.cacheDir) }
-        } else null
+        var sourceCache: java.io.File? = null
+        var exportSource = source
         val failures = mutableListOf<String>()
         var completed = 0
         try {
-            val exportSource = if (sourceCache != null) {
-                withContext(Dispatchers.IO) {
-                    resolver.openInputStream(source)?.use { input ->
-                        sourceCache.outputStream().buffered().use { output -> input.copyTo(output) }
-                    } ?: error("Could not read the source video for batch export.")
-                }
-                check(sourceCache.length() > 0L) { "The cached batch source video is empty." }
-                Uri.fromFile(sourceCache)
-            } else source
-            val expectAudio = withContext(Dispatchers.IO) { EncodedClipVerifier.sourceHasAudio(context, exportSource) }
+            val expectAudio = withContext(Dispatchers.IO) { EncodedClipVerifier.sourceHasAudio(context, source) }
+            val journal = withContext(Dispatchers.IO) {
+                BatchExportJournal.open(context, folder, source, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion)
+            }
 
             for (clip in clips) {
                 val safeTitle = clip.title.replace(Regex("[^A-Za-z0-9._-]+"), "_")
@@ -70,33 +63,74 @@ object BatchClipExporter {
                 var created: Uri? = null
                 var verified = false
                 try {
-                    val destination = withContext(Dispatchers.IO) {
-                        DocumentsContract.createDocument(resolver, parentDocument, "video/mp4", name)
-                    } ?: error("Could not create the output document.")
-                    created = destination
-                    val result = suspendCancellableCoroutine<Pair<Boolean, String>> { continuation ->
-                        ClipExporter.export(
-                            context, exportSource, destination, clip.startMs, clip.endMs,
-                            aspectRatio = aspectRatio,
-                            faceTrackingPath = faceTrackingPath,
-                            splitFacecamRegion = splitFacecamRegion,
-                            captionCues = CaptionTrack.fromTranscript(transcript, clip.startMs, clip.endMs),
-                            captionPreset = captionPreset,
-                            captionWords = if (captionPreset == CaptionPreset.KARAOKE) CaptionTrack.alignedWords(transcript, clip.startMs, clip.endMs) else emptyList(),
-                            onStatus = { },
-                            onFinished = { success, message ->
-                                if (continuation.isActive) continuation.resume(success to message)
+                    val previous = withContext(Dispatchers.IO) { journal.destination(clip) }
+                    val previouslyValid = previous != null && withContext(Dispatchers.IO) {
+                        runCatching {
+                            EncodedClipVerifier.verify(
+                                context, previous, clip.endMs - clip.startMs, aspectRatio, expectAudio,
+                                split = splitFacecamRegion != null, decodeFrame = true
+                            )
+                        }.isSuccess
+                    }
+                    if (previouslyValid) {
+                        verified = true
+                    } else {
+                        if (sourceCache == null && source.scheme != "file" &&
+                            (faceTrackingPath.isNotEmpty() || splitFacecamRegion != null)
+                        ) {
+                            withContext(Dispatchers.IO) {
+                                val cache = java.io.File.createTempFile("clipforge-batch-", ".media", context.cacheDir)
+                                try {
+                                    resolver.openInputStream(source)?.use { input ->
+                                        cache.outputStream().buffered().use { output -> input.copyTo(output) }
+                                    } ?: error("Could not read the source video for batch export.")
+                                    check(cache.length() > 0L) { "The cached batch source video is empty." }
+                                    sourceCache = cache
+                                    exportSource = Uri.fromFile(cache)
+                                } finally {
+                                    if (sourceCache != cache) cache.delete()
+                                }
                             }
-                        )
+                        }
+                        val destination = withContext(Dispatchers.IO) {
+                            // Reuse the original document when it is writable; a retry must not add a duplicate.
+                            val writable = previous?.takeIf { uri ->
+                                runCatching {
+                                    resolver.openFileDescriptor(uri, "rw")?.use { true } ?: false
+                                }.getOrDefault(false)
+                            }
+                            val target = writable ?: DocumentsContract.createDocument(resolver, parentDocument, "video/mp4", name)
+                                ?: error("Could not create the output document.")
+                            created = target
+                            journal.record(clip, target)
+                            target
+                        }
+                        val result = suspendCancellableCoroutine<Pair<Boolean, String>> { continuation ->
+                            ClipExporter.export(
+                                context, exportSource, destination, clip.startMs, clip.endMs,
+                                aspectRatio = aspectRatio,
+                                faceTrackingPath = faceTrackingPath,
+                                splitFacecamRegion = splitFacecamRegion,
+                                captionCues = CaptionTrack.fromTranscript(transcript, clip.startMs, clip.endMs),
+                                captionPreset = captionPreset,
+                                captionWords = if (captionPreset == CaptionPreset.KARAOKE) {
+                                    CaptionTrack.alignedWords(transcript, clip.startMs, clip.endMs)
+                                } else emptyList(),
+                                onStatus = { },
+                                onFinished = { success, message ->
+                                    if (continuation.isActive) continuation.resume(success to message)
+                                }
+                            )
+                        }
+                        check(result.first) { result.second }
+                        withContext(Dispatchers.IO) {
+                            EncodedClipVerifier.verify(
+                                context, destination, clip.endMs - clip.startMs, aspectRatio, expectAudio,
+                                split = splitFacecamRegion != null, decodeFrame = true
+                            )
+                        }
+                        verified = true
                     }
-                    check(result.first) { result.second }
-                    withContext(Dispatchers.IO) {
-                        EncodedClipVerifier.verify(
-                            context, destination, clip.endMs - clip.startMs, aspectRatio, expectAudio,
-                            split = splitFacecamRegion != null
-                        )
-                    }
-                    verified = true
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -105,7 +139,9 @@ object BatchClipExporter {
                     val unverified = created
                     if (!verified && unverified != null) {
                         withContext(NonCancellable + Dispatchers.IO) {
-                            runCatching { DocumentsContract.deleteDocument(resolver, unverified) }
+                            runCatching {
+                                if (DocumentsContract.deleteDocument(resolver, unverified)) journal.forget(clip)
+                            }
                         }
                     }
                 }

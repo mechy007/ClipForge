@@ -4,7 +4,10 @@ import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import java.io.File
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,6 +28,22 @@ class BatchExportPreflightInstrumentedTest {
             fail("Duplicate ranges must fail preflight")
         } catch (expected: IllegalArgumentException) {
             assertTrue(expected.message.orEmpty().contains("Duplicate"))
+        }
+    }
+
+    @Test fun destinationCanBeRecoveredFromTheJournalAndRemovedAfterFailure() {
+        val file = File(context.cacheDir, "batch-journal-test-${System.nanoTime()}.json")
+        val clip = ClipCandidate(0L, 30_000L, "Highlight", "", 80)
+        val output = Uri.parse("content://clipforge.test/document/result.mp4")
+        try {
+            BatchExportJournal.load(file).record(clip, output)
+            val resumed = BatchExportJournal.load(file)
+            assertEquals(output, resumed.destination(clip))
+            assertNull(resumed.destination(clip.copy(startMs = 1000L)))
+            resumed.forget(clip)
+            assertNull(BatchExportJournal.load(file).destination(clip))
+        } finally {
+            file.delete()
         }
     }
 
