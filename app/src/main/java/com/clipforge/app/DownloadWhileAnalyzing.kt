@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -29,6 +30,7 @@ internal object DownloadWhileAnalyzing {
         val planned = ProgressiveSegmentPlanner.plan(durationMs)
         val session = ProgressiveAnalysisSession(context, sourceFingerprint, stateDirectory)
         val processed = session.completedSegments()
+        var nextExpected = 0
         val queue = Channel<FinalizedMediaSegment>(capacity = 2)
         val producer = launch {
             try {
@@ -39,7 +41,26 @@ internal object DownloadWhileAnalyzing {
                     check(segment.file.isFile && segment.file.length() > 0L) {
                         "Segment must be finalized before publishing"
                     }
+                    require(segment.segment.index == nextExpected) {
+                        "Downloader must publish segments in timeline order"
+                    }
+                    nextExpected++
+                    // A nonempty download fragment is not necessarily a decodable video.
+                    // Reject it before recording an irreversible analysis checkpoint.
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(segment.file.absolutePath)
+                        check(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                            ?.toLongOrNull()?.let { it > 0L } == true) {
+                            "Downloaded segment is not independently playable"
+                        }
+                    } finally {
+                        retriever.release()
+                    }
                     if (segment.segment.index !in processed) queue.send(segment)
+                }
+                check(nextExpected == planned.size) {
+                    "Downloader ended before all planned segments were finalized"
                 }
                 queue.close()
             } catch (error: Throwable) {
