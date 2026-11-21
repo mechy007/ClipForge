@@ -159,8 +159,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
     var verticalLayoutChoice by rememberSaveable { mutableStateOf<String?>(null) }
     var facecamCorner by rememberSaveable { mutableStateOf<String?>(null) }
+    var detectedFacecam by remember(video) { mutableStateOf<StreamRegion?>(null) }
+    var facecamDetectionBusy by remember { mutableStateOf(false) }
+    var facecamDetectionMessage by remember { mutableStateOf("") }
     val splitRegion = if (exportAspectRatio < 0.8f && verticalLayoutChoice == "split") {
-        when (facecamCorner) {
+        detectedFacecam ?: when (facecamCorner) {
             "Top left" -> StreamRegion(0f, 0f, 0.32f, 0.38f)
             "Top right" -> StreamRegion(0.68f, 0f, 1f, 0.38f)
             "Bottom left" -> StreamRegion(0f, 0.62f, 0.32f, 1f)
@@ -910,12 +913,40 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         )
                     }
                     if (verticalLayoutChoice == "split") {
+                        Button(
+                            onClick = {
+                                val source = video
+                                if (source != null && duration > 0L) {
+                                    scope.launch {
+                                        facecamDetectionBusy = true
+                                        facecamDetectionMessage = "Finding a stable facecam position…"
+                                        try {
+                                            val region = StreamFacecamDetector.detect(context, source, duration)
+                                            detectedFacecam = region
+                                            facecamDetectionMessage = if (region == null) {
+                                                "No reliable facecam detected. Choose its corner manually."
+                                            } else {
+                                                "Facecam found. You can override it using a corner below."
+                                            }
+                                        } catch (error: Exception) {
+                                            detectedFacecam = null
+                                            facecamDetectionMessage = "Detection unavailable: ${error.localizedMessage ?: "unknown error"}. Choose a corner."
+                                        } finally {
+                                            facecamDetectionBusy = false
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !analyzing && !facecamDetectionBusy && video != null && duration > 0L,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (facecamDetectionBusy) "Detecting facecam…" else "Auto-detect facecam") }
+                        if (facecamDetectionMessage.isNotBlank()) Text(facecamDetectionMessage, color = Muted, fontSize = 11.sp)
                         Text("Choose the source facecam corner. This is an approximate crop; check your output before sharing.", color = Muted, fontSize = 11.sp)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf("Top left", "Top right", "Bottom left", "Bottom right").forEach { corner ->
                                 FilterChip(
                                     selected = facecamCorner == corner,
-                                    onClick = { facecamCorner = corner },
+                                    onClick = { facecamCorner = corner; detectedFacecam = null; facecamDetectionMessage = "Manual facecam corner selected." },
                                     label = { Text(corner, fontSize = 9.sp) },
                                     enabled = !analyzing
                                 )
@@ -1000,7 +1031,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
                     }
-                }, enabled = ready && !analyzing && duration > 0L && (exportAspectRatio >= 0.8f || (verticalLayoutChoice != null && (verticalLayoutChoice != "split" || facecamCorner != null))), modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                }, enabled = ready && !analyzing && duration > 0L && (exportAspectRatio >= 0.8f || (verticalLayoutChoice != null && (verticalLayoutChoice != "split" || facecamCorner != null || detectedFacecam != null))), modifier = Modifier.fillMaxWidth().height(54.dp)) {
                     Icon(Icons.Default.AutoAwesome, null)
                     Text(if (analyzing) "  Analyzing video…" else "  Find my best clips")
                 }
