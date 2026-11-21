@@ -57,8 +57,8 @@ object BatchClipExporter {
                 else -> "1x1"
             }
             val name = String.format(
-                Locale.US, "ClipForge_%s_%ds-%ds_%s.mp4",
-                ratioTag, clip.startMs / 1000L, clip.endMs / 1000L, safeTitle
+                Locale.US, "ClipForge_%s_%dms-%dms_%s.mp4",
+                ratioTag, clip.startMs, clip.endMs, safeTitle
             )
             val destination = withContext(Dispatchers.IO) {
                 DocumentsContract.createDocument(resolver, parentDocument, "video/mp4", name)
