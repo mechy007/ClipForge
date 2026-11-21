@@ -58,6 +58,26 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
         }
         return writableDatabase.insertOrThrow("projects", null, values)
     }
+    fun saveCompletedAnalysis(
+        title: String,
+        sourceUri: String,
+        durationMs: Long,
+        clips: List<ClipCandidate>,
+        transcript: List<TranscriptSegment>
+    ): Long {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val id = saveProject(title, sourceUri, durationMs, "completed")
+            saveHighlights(id, clips)
+            saveTranscript(id, transcript)
+            db.setTransactionSuccessful()
+            return id
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun saveHighlights(projectId: Long, clips: List<ClipCandidate>) {
         val db = writableDatabase; db.beginTransaction()
         try {

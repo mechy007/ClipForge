@@ -164,3 +164,24 @@ internal object VisualOnlyHighlightDetector {
         return chosen
     }
 }
+
+/** Rank speech-based and visual-only candidates on the same source timeline. */
+internal fun rankVideoHighlights(
+    transcript: List<TranscriptSegment>,
+    energy: List<AudioEnergyWindow>,
+    visual: VisualUnderstandingResult,
+    durationMs: Long,
+    targetClipDurationMs: Long,
+    maxClips: Int
+): List<ClipCandidate> {
+    val speech = HighlightDetector.detect(transcript, durationMs, targetClipDurationMs, energy, visual.sceneCuts, maxClips)
+    val candidates = VisualHighlightReranker.rerank(speech, visual).toMutableList()
+    val visualOnly = VisualOnlyHighlightDetector.detect(visual, durationMs, targetClipDurationMs, maxClips)
+    for (clip in visualOnly) {
+        if (candidates.size >= maxClips) break
+        if (candidates.none { existing ->
+                HighlightDetector.overlapOfShorter(existing.startMs, existing.endMs, clip.startMs, clip.endMs) > 0.65
+            }) candidates += clip
+    }
+    return ReactionSignalFusion.rerank(candidates, visual, energy).take(maxClips)
+}

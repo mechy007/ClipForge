@@ -640,9 +640,15 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 Text(if (importingLink) "Importing video…" else if (youtubeLink) "Download and clip" else "Import from direct link")
             }
             if (youtubeLink) {
+                if (exportAspectRatio == 9f / 16f) {
+                    VerticalLayoutChoices(verticalLayoutChoice, !importingLink) { verticalLayoutChoice = it }
+                }
                 OutlinedButton(
                     onClick = {
                         val url = linkText.trim()
+                        val quality = youtubeQuality
+                        val language = transcriptLanguage.takeUnless { it == "auto" }
+                        val clipLength = targetClipDurationMs
                         importingLink = true
                         scope.launch {
                             try {
@@ -651,19 +657,34 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 val results = DownloadWhileAnalyzing.runYouTubeSections(
                                     context = context,
                                     url = url,
-                                    height = youtubeQuality,
+                                    height = quality,
                                     durationMs = recordingMs,
-                                    stateDirectory = java.io.File(context.filesDir, "progressive-analysis"),
-                                    language = transcriptLanguage.takeUnless { it == "auto" },
-                                    onStatus = { status -> linkStatus = "AI analysis · $status" },
+                                    stateDirectory = File(context.filesDir, "progressive-analysis"),
+                                    language = language,
+                                    targetClipDurationMs = clipLength,
+                                    onStatus = { status -> linkStatus = status },
                                     onDownloadProgress = { completed, total ->
-                                        linkStatus = "Sections downloaded: $completed / $total · analyzing concurrently"
+                                        linkStatus = "Sections downloaded: $completed / $total"
                                     }
                                 )
-                                clips = results
-                                selectedClips = results.toSet()
-                                duration = recordingMs
-                                linkStatus = "Analyzed ${results.size} highlights. Import the complete video before preview/export."
+                                val project = withContext(Dispatchers.IO) {
+                                    val id = projectDb.saveCompletedAnalysis(
+                                        "YouTube ${YouTubeLiveApiClient.parseVideoId(url)}", results.source.toString(),
+                                        results.durationMs, results.highlights, results.transcript
+                                    )
+                                    id to projectDb.listProjects()
+                                }
+                                video = results.source
+                                duration = results.durationMs
+                                clips = results.highlights
+                                selectedClips = results.highlights.toSet()
+                                transcriptSegments = results.transcript
+                                reviewed = emptyMap()
+                                editing = null
+                                activeProjectId = project.first
+                                savedProjects = project.second
+                                linkStatus = "Recording imported and analyzed · ${results.highlights.size} highlights"
+                                activeSection = if (results.highlights.isNotEmpty() && !splitSelected) "Highlights" else "Studio"
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (e: Exception) {
@@ -673,11 +694,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                         }
                     },
-                    enabled = !importingLink && !analyzing && linkText.isNotBlank(),
+                    enabled = ready && !importingLink && !analyzing && linkText.isNotBlank() &&
+                        (exportAspectRatio != 9f / 16f || verticalLayoutChoice != null),
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Analyze during download (experimental)") }
                 Text(
-                    "Downloads playable sections and analyzes them concurrently. A full original video is still required for final clip export.",
+                    "Analyzes playable sections while the recording downloads, then opens the recording and its clips for review.",
                     color = Muted, fontSize = 11.sp
                 )
             }
@@ -920,21 +942,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
                 Text("For long recordings, choose up to 100 candidates. Actual results depend on available speech and distinct moments.", color = Muted, fontSize = 11.sp)
                 if (exportAspectRatio < 0.8f) {
-                    Text("CHOOSE YOUR 9:16 CLIP LAYOUT", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text("Choose a layout before finding highlights. Other aspect ratios use their normal layout.", color = Muted, fontSize = 11.sp)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(
-                            selected = verticalLayoutChoice == "standard",
-                            onClick = { verticalLayoutChoice = "standard" },
-                            enabled = !analyzing,
-                            label = { Text("Standard · smart gameplay crop") }
-                        )
-                        FilterChip(
-                            selected = verticalLayoutChoice == "split",
-                            onClick = { verticalLayoutChoice = "split" },
-                            enabled = !analyzing,
-                            label = { Text("50/50 · streamer on top, gameplay below") }
-                        )
+                    if (!YouTubeLinkClassifier.isYouTubeUrl(linkText)) {
+                        VerticalLayoutChoices(verticalLayoutChoice, !analyzing && !importingLink) { verticalLayoutChoice = it }
                     }
                     if (splitSelected) {
                         if (facecamDetectionMessage.isNotBlank()) {
@@ -1010,7 +1019,6 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             transcriptSegments = transcript
                             message = "Analyzing video motion and scene changes offline…"
                             val visualSignals = VisualUnderstandingEngine.analyze(context, src, duration)
-                            val sceneCuts = visualSignals.sceneCuts
                             message = "Tracking faces automatically for vertical framing…"
                             faceTrackingPath = FaceTrackingAnalyzer.analyze(context, src, 0L, duration, exportAspectRatio)
                             faceTrackingMessage = if (faceTrackingPath.isEmpty()) {
@@ -1020,26 +1028,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                             message = "Ranking speech, silence and scene changes…"
                             val found = withContext(Dispatchers.Default) {
-                                run {
-                                    val speechRanked = VisualHighlightReranker.rerank(
-                                        HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights),
-                                        visualSignals
-                                    )
-                                    val visualRanked = VisualOnlyHighlightDetector.detect(
-                                        visualSignals, duration, targetClipDurationMs, maxHighlights
-                                    )
-                                    val combined = speechRanked.toMutableList()
-                                    for (candidate in visualRanked) {
-                                        if (combined.size >= maxHighlights) break
-                                        if (combined.none { existing ->
-                                                HighlightDetector.overlapOfShorter(
-                                                    candidate.startMs, candidate.endMs,
-                                                    existing.startMs, existing.endMs
-                                                ) > 0.65
-                                            }) combined += candidate
-                                    }
-                                    ReactionSignalFusion.rerank(combined, visualSignals, analysis.audioEnergy).take(maxHighlights)
-                                }
+                                rankVideoHighlights(transcript, analysis.audioEnergy, visualSignals, duration, targetClipDurationMs, maxHighlights)
                             }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
@@ -1340,6 +1329,21 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
 private fun formatElapsed(seconds: Long): String = "%d:%02d".format(seconds / 60L, seconds % 60L)
 
 private fun time(ms: Long): String = "%d:%02d".format(ms / 60_000L, (ms / 1000L) % 60L)
+
+@Composable
+private fun VerticalLayoutChoices(choice: String?, enabled: Boolean, onChange: (String) -> Unit) {
+    Text("9:16 clip layout", fontWeight = FontWeight.SemiBold)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FilterChip(
+            selected = choice == "standard", onClick = { onChange("standard") },
+            enabled = enabled, label = { Text("Standard") }
+        )
+        FilterChip(
+            selected = choice == "split", onClick = { onChange("split") },
+            enabled = enabled, label = { Text("50/50 · streamer on top, gameplay below") }
+        )
+    }
+}
 
 @Composable
 private fun FacecamRegionControls(region: StreamRegion, onChange: (StreamRegion) -> Unit) {
