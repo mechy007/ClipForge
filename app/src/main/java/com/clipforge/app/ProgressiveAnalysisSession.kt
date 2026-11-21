@@ -55,6 +55,23 @@ internal class ProgressiveAnalysisSession(
         return ProgressiveSignalIntegration.detect(store, processed, durationMs, maxClips = 10)
     }
 
+    /**
+     * Convenience entry point for a local transcoder or authorized segment downloader.
+     * Files are finalized before publication; already acknowledged segments are
+     * omitted so resuming does not waste offline Whisper inference.
+     */
+    suspend fun analyzeFinalizedFiles(
+        durationMs: Long,
+        filesByIndex: Map<Int, File>,
+        language: String? = null,
+        onStatus: (String) -> Unit = {}
+    ): List<ClipCandidate> {
+        val source = FinalizedLocalSegmentSource.fromFiles(
+            durationMs, filesByIndex, checkpoint.processedIndices()
+        )
+        return analyze(source, durationMs, language, onStatus)
+    }
+
     fun completedSegments(): Set<Int> = checkpoint.processedIndices()
 
     private fun String.sha256(): String =
