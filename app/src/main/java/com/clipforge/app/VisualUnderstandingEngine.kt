@@ -88,6 +88,39 @@ internal object VisualHighlightReranker {
 }
 
 /**
+ * Cross-modal reaction scoring. Visual motion by itself is ambiguous, so audio
+ * peaks only provide a small bonus when they coincide with a visual event.
+ * The existing audio-only and transcript scores remain authoritative.
+ */
+internal object ReactionSignalFusion {
+    fun rerank(
+        clips: List<ClipCandidate>,
+        visual: VisualUnderstandingResult,
+        audio: List<AudioEnergyWindow>
+    ): List<ClipCandidate> {
+        val reference = AudioSignalScorer.reference(audio) ?: return clips
+        return clips.map { clip ->
+            val events = visual.activity.filter {
+                it.timeMs >= clip.startMs && it.timeMs < clip.endMs &&
+                    (it.motion >= 0.12f || it.sceneChange)
+            }
+            val paired = events.count { event ->
+                audio.any { window ->
+                    window.startMs <= event.timeMs + 1_000L &&
+                        window.endMs >= event.timeMs - 1_000L &&
+                        window.peak.isFinite() && window.peak >= reference.peak * 0.75f
+                }
+            }
+            val bonus = (paired * 2).coerceIn(0, 6)
+            if (bonus == 0) clip else clip.copy(
+                score = (clip.score + bonus).coerceAtMost(100),
+                reason = clip.reason + " Synchronized audio-visual reaction: +$bonus."
+            )
+        }.sortedByDescending { it.score }
+    }
+}
+
+/**
  * Generates candidates even when Whisper finds no speech (for example silent
  * gameplay). Peaks are selected by visual activity with non-overlapping windows.
  */
