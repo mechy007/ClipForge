@@ -41,8 +41,18 @@ internal class ProgressiveAnalysisSession(
         }
         // A crash after writing a snapshot but before acknowledging the checkpoint
         // is safe: the segment is replayed and its snapshot is overwritten.
+        // Reject mismatched timeline spans before they can be acknowledged as
+        // finalized or sent through expensive offline transcription.
+        val validatedSource = ProgressiveMediaSource { emit ->
+            source.produce { item ->
+                require(planned.getOrNull(item.segment.index) == item.segment) {
+                    "Source segment differs from planned timeline"
+                }
+                emit(item)
+            }
+        }
         ProgressiveOfflineTranscription.run(
-            context, source, checkpoint, language, onStatus
+            context, validatedSource, checkpoint, language, onStatus
         ) { signals ->
             val expected = planned.getOrNull(signals.segment.index)
             require(expected == signals.segment) { "Source segment differs from planned timeline" }
