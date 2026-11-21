@@ -39,7 +39,7 @@ object VisualUnderstandingEngine {
                 var time = 0L
                 while (time < durationMs) {
                     currentCoroutineContext().ensureActive()
-                    val frame = retriever.getFrameAtTime(time * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    val frame = retriever.getFrameAtTime(time * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST)
                     if (frame != null) {
                         val small = Bitmap.createScaledBitmap(frame, WIDTH, HEIGHT, true)
                         try {
