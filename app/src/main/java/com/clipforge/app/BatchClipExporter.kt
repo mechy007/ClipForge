@@ -21,6 +21,7 @@ object BatchClipExporter {
         transcript: List<TranscriptSegment> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         faceTrackingPath: List<CropFocus> = emptyList(),
+        splitFacecamRegion: StreamRegion? = null,
         onProgress: (Int, Int, ClipCandidate) -> Unit = { _, _, _ -> }
     ): Int {
         require(clips.isNotEmpty()) { "No highlights were selected." }
@@ -69,6 +70,7 @@ object BatchClipExporter {
                     context, exportSource, destination, clip.startMs, clip.endMs,
                     aspectRatio = aspectRatio,
                     faceTrackingPath = faceTrackingPath,
+                    splitFacecamRegion = splitFacecamRegion,
                     captionCues = if (transcript.isEmpty()) emptyList() else CaptionTrack.fromTranscript(transcript, clip.startMs, clip.endMs),
                     captionPreset = captionPreset,
                     onStatus = { },
