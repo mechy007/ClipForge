@@ -135,4 +135,26 @@ class ProgressiveAnalysisInstrumentedTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun localFileEntryPointRejectsMissingSegmentsAndInvalidIndices() {
+        val dir = directory()
+        try {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val session = ProgressiveAnalysisSession(context, "local-file-entry", dir)
+            try {
+                kotlinx.coroutines.runBlocking {
+                    session.analyzeFinalizedFiles(120_000L, emptyMap())
+                }
+                fail("Missing finalized media segments must fail closed")
+            } catch (expected: IllegalStateException) {
+                assertTrue(expected.message.orEmpty().contains("incomplete"))
+            }
+            try {
+                kotlinx.coroutines.runBlocking {
+                    session.analyzeFinalizedFiles(60_000L, mapOf(3 to File(dir, "missing.mp4")))
+                }
+                fail("Unexpected segment indices must be rejected")
+            } catch (_: IllegalArgumentException) { }
+        } finally { dir.deleteRecursively() }
+    }
+
 }
