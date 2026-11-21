@@ -41,8 +41,6 @@ internal class BatchExportJournal(private val file: AtomicFile?, private val rec
     private fun range(clip: ClipCandidate): String = "${clip.startMs}-${clip.endMs}"
 
     companion object {
-        private val sessionRecords = mutableMapOf<String, JSONObject>()
-
         fun open(
             context: Context, folder: Uri, source: Uri, aspect: Float, transcript: List<TranscriptSegment>,
             preset: CaptionPreset, tracking: List<CropFocus>, split: StreamRegion?, gameplayRegion: StreamRegion? = null,
@@ -63,8 +61,9 @@ internal class BatchExportJournal(private val file: AtomicFile?, private val rec
             transcript.forEach { add(it.toString()) }
             val key = hash.digest().joinToString("") { "%02x".format(it) }
             if (revision == null) {
-                val records = synchronized(sessionRecords) { sessionRecords.getOrPut(key) { JSONObject() } }
-                return BatchExportJournal(null, records)
+                // A URI with no reliable revision may point to changed bytes even
+                // within this process. Never reuse an output for an unknown source.
+                return BatchExportJournal(null, JSONObject())
             }
             val folderPath = File(context.filesDir, "batch-export-journals")
             check(folderPath.isDirectory || folderPath.mkdirs()) { "Could not open the export journal directory." }
