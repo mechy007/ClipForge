@@ -1706,14 +1706,14 @@ private fun FacecamRegionFrame(source: Uri, timeMs: Long, region: StreamRegion?,
         Box(Modifier.fillMaxWidth().aspectRatio(bitmap.width.toFloat() / bitmap.height)) {
             Image(bitmap, contentDescription = "Source frame", modifier = Modifier.fillMaxSize())
             if (region != null) {
-                Canvas(Modifier.matchParentSize().pointerInput(source, timeMs, onChange != null) {
+                Canvas(Modifier.matchParentSize().pointerInput(source, onChange != null) {
                     if (updateRegion == null) return@pointerInput
                     var resize = false
                     detectDragGestures(
                         onDragStart = { position ->
                             val area = currentRegion
                             resize = area != null && (position - Offset(area.right * size.width, area.bottom * size.height))
-                                .getDistance() < 28.dp.toPx()
+                                .getDistance() < 48.dp.toPx()
                         }
                     ) { change, delta ->
                         val area = currentRegion ?: return@detectDragGestures
