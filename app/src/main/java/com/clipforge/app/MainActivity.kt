@@ -599,6 +599,48 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }, enabled = linkText.isNotBlank() && !importingLink && !analyzing, modifier = Modifier.fillMaxWidth()) {
                 Text(if (importingLink) "Importing video…" else if (youtubeLink) "Download and clip" else "Import from direct link")
             }
+            if (youtubeLink) {
+                OutlinedButton(
+                    onClick = {
+                        val url = linkText.trim()
+                        importingLink = true
+                        scope.launch {
+                            try {
+                                linkStatus = "Reading recording duration…"
+                                val recordingMs = YouTubeDurationProbe.durationMs(context, url)
+                                val results = DownloadWhileAnalyzing.runYouTubeSections(
+                                    context = context,
+                                    url = url,
+                                    height = youtubeQuality,
+                                    durationMs = recordingMs,
+                                    stateDirectory = java.io.File(context.filesDir, "progressive-analysis"),
+                                    language = transcriptLanguage.takeUnless { it == "auto" },
+                                    onStatus = { status -> linkStatus = "AI analysis · $status" },
+                                    onDownloadProgress = { completed, total ->
+                                        linkStatus = "Sections downloaded: $completed / $total · analyzing concurrently"
+                                    }
+                                )
+                                clips = results
+                                selectedClips = results.toSet()
+                                duration = recordingMs
+                                linkStatus = "Analyzed ${results.size} highlights. Import the complete video before preview/export."
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                linkStatus = "Progressive analysis unavailable: ${e.localizedMessage ?: "Try standard download."}"
+                            } finally {
+                                importingLink = false
+                            }
+                        }
+                    },
+                    enabled = !importingLink && !analyzing && linkText.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Analyze during download (experimental)") }
+                Text(
+                    "Downloads playable sections and analyzes them concurrently. A full original video is still required for final clip export.",
+                    color = Muted, fontSize = 11.sp
+                )
+            }
             if (linkStatus.isNotBlank()) Text(linkStatus, color = Muted, fontSize = 11.sp)
             }
             if (activeSection == "Projects") {
