@@ -30,6 +30,15 @@ internal class ProgressiveAnalysisSession(
         require(durationMs > 0L)
         val planned = ProgressiveSegmentPlanner.plan(durationMs)
         val indices = planned.map { it.index }.toSet()
+        val alreadyProcessed = checkpoint.processedIndices()
+        check(alreadyProcessed.all { it in indices }) {
+            "Checkpoint contains segments outside the current source timeline"
+        }
+        // Verify that an acknowledged segment has its durable signals before
+        // resuming. Otherwise missing snapshots could be silently skipped.
+        if (alreadyProcessed.isNotEmpty()) {
+            ProgressiveSignalIntegration.restore(store, alreadyProcessed)
+        }
         // A crash after writing a snapshot but before acknowledging the checkpoint
         // is safe: the segment is replayed and its snapshot is overwritten.
         ProgressiveOfflineTranscription.run(
