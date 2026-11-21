@@ -39,7 +39,8 @@ object BatchExportCoordinator {
         val aspectRatio: Float,
         val transcript: List<TranscriptSegment>,
         val captionPreset: CaptionPreset,
-        val faceTrackingPath: List<CropFocus>
+        val faceTrackingPath: List<CropFocus>,
+        val splitFacecamRegion: StreamRegion?
     )
 
     fun start(
@@ -47,14 +48,15 @@ object BatchExportCoordinator {
         aspectRatio: Float = 9f / 16f,
         transcript: List<TranscriptSegment> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
-        faceTrackingPath: List<CropFocus> = emptyList()
+        faceTrackingPath: List<CropFocus> = emptyList(),
+        splitFacecamRegion: StreamRegion? = null
     ) {
         val previous = mutableStatus.value
         if (previous.running) return
 
         val settings = ExportSettings(
             source.toString(), folder.toString(), aspectRatio,
-            transcript.toList(), captionPreset, faceTrackingPath.toList()
+            transcript.toList(), captionPreset, faceTrackingPath.toList(), splitFacecamRegion
         )
         val retryingInterruptedBatch = previous.message.startsWith("Batch export stopped:")
         // Never reuse outputs after the user changes captions or crop tracking.
@@ -94,7 +96,7 @@ object BatchExportCoordinator {
         val appContext = context.applicationContext
         scope.launch {
             try {
-                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset, faceTrackingPath) { done, _, clip ->
+                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion) { done, _, clip ->
                     verifiedBatchRanges.add(clip.startMs to clip.endMs)
                     val verifiedClips = selectedClips.filter { (it.startMs to it.endMs) in verifiedBatchRanges }
                     mutableStatus.value = BatchExportStatus(
