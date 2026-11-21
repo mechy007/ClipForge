@@ -107,7 +107,7 @@ internal object VisualOnlyHighlightDetector {
             val end = minOf(durationMs, start + window)
             if (end - start < 8_000L) break
             val frames = signals.activity.filter { it.timeMs >= start && it.timeMs < end }
-            if (frames.size >= 2) {
+            if (frames.size >= 2 && frames.any { it.motion >= 0.08f || it.sceneChange }) {
                 val mean = frames.map { it.motion.coerceIn(0f, 1f) }.average().toFloat()
                 val peak = frames.maxOf { it.motion.coerceIn(0f, 1f) }
                 val changes = frames.count { it.sceneChange }
