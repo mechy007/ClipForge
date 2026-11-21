@@ -1715,21 +1715,39 @@ private fun FacecamRegionFrame(source: Uri, timeMs: Long, region: StreamRegion?,
 
 @Composable
 private fun FacecamRegionControls(region: StreamRegion, onChange: (StreamRegion) -> Unit) {
+    // Move sliders preserve region dimensions; resize sliders preserve the anchored
+    // top-left corner. Never expose an invalid Slider range near the source edges.
     val minimumSize = 0.02f
     val width = region.width
     val height = region.height
     Text("Horizontal position")
-    Slider(region.left, { x -> onChange(StreamRegion(x, region.top, (x + width).coerceAtMost(1f), region.bottom)) },
-        valueRange = 0f..(1f - width), enabled = width < 1f)
+    Slider(
+        value = region.left.coerceIn(0f, 1f - width),
+        onValueChange = { x -> onChange(StreamRegion(x, region.top, x + width, region.bottom)) },
+        valueRange = 0f..(1f - width).coerceAtLeast(0f),
+        enabled = width < 0.999f
+    )
     Text("Vertical position")
-    Slider(region.top, { y -> onChange(StreamRegion(region.left, y, region.right, (y + height).coerceAtMost(1f))) },
-        valueRange = 0f..(1f - height), enabled = height < 1f)
+    Slider(
+        value = region.top.coerceIn(0f, 1f - height),
+        onValueChange = { y -> onChange(StreamRegion(region.left, y, region.right, y + height)) },
+        valueRange = 0f..(1f - height).coerceAtLeast(0f),
+        enabled = height < 0.999f
+    )
     Text("Width")
-    Slider(width, { w -> onChange(region.copy(right = (region.left + w).coerceAtMost(1f))) },
-        valueRange = minimumSize..(1f - region.left).coerceAtLeast(minimumSize))
+    Slider(
+        value = width,
+        onValueChange = { w -> onChange(region.copy(right = (region.left + w).coerceAtMost(1f))) },
+        valueRange = minimumSize..(1f - region.left).coerceAtLeast(minimumSize),
+        enabled = region.left <= 1f - minimumSize
+    )
     Text("Height")
-    Slider(height, { h -> onChange(region.copy(bottom = (region.top + h).coerceAtMost(1f))) },
-        valueRange = minimumSize..(1f - region.top).coerceAtLeast(minimumSize))
+    Slider(
+        value = height,
+        onValueChange = { h -> onChange(region.copy(bottom = (region.top + h).coerceAtMost(1f))) },
+        valueRange = minimumSize..(1f - region.top).coerceAtLeast(minimumSize),
+        enabled = region.top <= 1f - minimumSize
+    )
 }
 
 @Composable
