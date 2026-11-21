@@ -4,14 +4,21 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 
 /** Built-in, offline visual activity analysis. No model download or network connection. */
-data class VisualActivity(val timeMs: Long, val motion: Float, val sceneChange: Boolean)
+data class VisualActivity(
+    val timeMs: Long,
+    val motion: Float,
+    val sceneChange: Boolean,
+    val cameraMotion: Float = 0f,
+    val stableOverlay: Boolean = false,
+    val signature: Long? = null
+)
 data class VisualUnderstandingResult(val activity: List<VisualActivity>) {
     val sceneCuts: List<Long> get() = activity.filter { it.sceneChange }.map { it.timeMs }
     val highMotionMoments: List<Long> get() = activity.filter { it.motion >= 0.20f }.map { it.timeMs }
@@ -23,9 +30,8 @@ data class VisualUnderstandingResult(val activity: List<VisualActivity>) {
  * Frames are sampled and downscaled to keep memory bounded on 8 GB devices.
  */
 object VisualUnderstandingEngine {
-    private const val WIDTH = 64
-    private const val HEIGHT = 36
-    private const val SCENE_THRESHOLD = 0.24f
+    private const val WIDTH = VisualFrameSignals.WIDTH
+    private const val HEIGHT = VisualFrameSignals.HEIGHT
 
     suspend fun analyze(context: Context, source: Uri, durationMs: Long): VisualUnderstandingResult =
         withContext(Dispatchers.IO) {
@@ -33,30 +39,33 @@ object VisualUnderstandingEngine {
             val retriever = MediaMetadataRetriever()
             val events = mutableListOf<VisualActivity>()
             var previous: FloatArray? = null
+            var current = FloatArray(WIDTH * HEIGHT)
+            val pixels = IntArray(current.size)
             try {
                 retriever.setDataSource(context, source)
                 val step = maxOf(1_000L, durationMs / 600L)
                 var time = 0L
                 while (time < durationMs) {
                     currentCoroutineContext().ensureActive()
-                    val frame = retriever.getFrameAtTime(time * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST)
+                    val frame = if (Build.VERSION.SDK_INT >= 27) {
+                        retriever.getScaledFrameAtTime(time * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST, WIDTH, HEIGHT)
+                    } else {
+                        retriever.getFrameAtTime(time * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST)
+                    }
                     if (frame != null) {
                         val small = Bitmap.createScaledBitmap(frame, WIDTH, HEIGHT, true)
                         try {
-                            val pixels = IntArray(WIDTH * HEIGHT)
                             small.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
-                            val current = FloatArray(pixels.size) { i ->
+                            for (i in pixels.indices) {
                                 val color = pixels[i]
-                                ((color shr 16 and 255) * 0.2126f +
+                                current[i] = ((color shr 16 and 255) * 0.2126f +
                                     (color shr 8 and 255) * 0.7152f +
                                     (color and 255) * 0.0722f) / 255f
                             }
-                            val motion = previous?.let { before ->
-                                before.indices.sumOf { i -> abs(before[i] - current[i]).toDouble() }
-                                    .div(current.size).toFloat()
-                            } ?: 0f
-                            events += VisualActivity(time, motion, previous != null && motion >= SCENE_THRESHOLD)
+                            events += VisualFrameSignals.compare(time, previous, current)
+                            val next = previous ?: FloatArray(current.size)
                             previous = current
+                            current = next
                         } finally {
                             if (small !== frame) small.recycle()
                             frame.recycle()
@@ -99,16 +108,15 @@ internal object ReactionSignalFusion {
         audio: List<AudioEnergyWindow>
     ): List<ClipCandidate> {
         val reference = AudioSignalScorer.reference(audio) ?: return clips
+        val audioPeaks = audio.filter { it.peak.isFinite() && it.peak >= reference.peak * 0.75f }
         return clips.map { clip ->
             val events = visual.activity.filter {
                 it.timeMs >= clip.startMs && it.timeMs < clip.endMs &&
                     (it.motion >= 0.12f || it.sceneChange)
             }
             val paired = events.count { event ->
-                audio.any { window ->
-                    window.startMs <= event.timeMs + 1_000L &&
-                        window.endMs >= event.timeMs - 1_000L &&
-                        window.peak.isFinite() && window.peak >= reference.peak * 0.75f
+                audioPeaks.any { window ->
+                    window.startMs <= event.timeMs + 1_000L && window.endMs >= event.timeMs - 1_000L
                 }
             }
             val bonus = (paired * 2).coerceIn(0, 6)
@@ -134,7 +142,7 @@ internal object VisualOnlyHighlightDetector {
         if (durationMs < 8_000L || signals.activity.isEmpty()) return emptyList()
         val window = targetDurationMs.coerceIn(8_000L, 60_000L).coerceAtMost(durationMs)
         val step = (window / 3L).coerceAtLeast(1_000L)
-        val candidates = mutableListOf<ClipCandidate>()
+        val candidates = mutableListOf<Pair<ClipCandidate, Long?>>()
         var start = 0L
         while (start < durationMs) {
             val end = minOf(durationMs, start + window)
@@ -142,26 +150,32 @@ internal object VisualOnlyHighlightDetector {
             val frames = signals.activity.filter { it.timeMs >= start && it.timeMs < end }
             if (frames.size >= 2 && frames.any { it.motion >= 0.08f || it.sceneChange }) {
                 val mean = frames.map { it.motion.coerceIn(0f, 1f) }.average().toFloat()
-                val peak = frames.maxOf { it.motion.coerceIn(0f, 1f) }
+                val action = frames.maxBy { it.motion }
                 val changes = frames.count { it.sceneChange }
-                val score = ((mean * 100f * 0.6f) + (peak * 100f * 0.3f) +
-                    (changes.coerceAtMost(3) * 3f)).toInt().coerceIn(0, 100)
-                candidates += ClipCandidate(start, end, "Visual highlight", "",
-                    score, "Offline visual motion and scene-change signals; no speech required.")
+                val overlays = frames.count { it.stableOverlay }
+                val cameraMotion = frames.count { it.cameraMotion >= 0.07f }
+                val overlayBonus = minOf(6, overlays * 2)
+                val score = (mean * 60f + action.motion * 30f + changes.coerceAtMost(3) * 3f +
+                    overlayBonus).toInt().coerceIn(0, 100)
+                val reason = buildString {
+                    append("Local motion and scene changes.")
+                    if (cameraMotion > 0) append(" Camera movement in $cameraMotion sampled frame(s).")
+                    if (overlays > 0) append(" Stable HUD-like edges during motion.")
+                }
+                candidates += ClipCandidate(start, end, "Visual highlight", "", score, reason) to action.signature
             }
             if (start >= durationMs - step) break
             start += step
         }
-        val chosen = mutableListOf<ClipCandidate>()
-        for (candidate in candidates.sortedByDescending { it.score }) {
+        val chosen = mutableListOf<Pair<ClipCandidate, Long?>>()
+        for ((candidate, signature) in candidates.sortedByDescending { it.first.score }) {
             if (chosen.size >= maxClips.coerceIn(1, 100)) break
-            if (chosen.none {
-                    HighlightDetector.overlapOfShorter(
-                        candidate.startMs, candidate.endMs, it.startMs, it.endMs
-                    ) > 0.65
-                }) chosen += candidate
+            if (chosen.none { (previous, hash) ->
+                    HighlightDetector.overlapOfShorter(candidate.startMs, candidate.endMs, previous.startMs, previous.endMs) > 0.65 ||
+                        (signature != null && hash != null && java.lang.Long.bitCount(signature xor hash) <= 4)
+                }) chosen += candidate to signature
         }
-        return chosen
+        return chosen.map { it.first }
     }
 }
 
@@ -175,13 +189,14 @@ internal fun rankVideoHighlights(
     maxClips: Int
 ): List<ClipCandidate> {
     val speech = HighlightDetector.detect(transcript, durationMs, targetClipDurationMs, energy, visual.sceneCuts, maxClips)
-    val candidates = VisualHighlightReranker.rerank(speech, visual).toMutableList()
-    val visualOnly = VisualOnlyHighlightDetector.detect(visual, durationMs, targetClipDurationMs, maxClips)
-    for (clip in visualOnly) {
-        if (candidates.size >= maxClips) break
-        if (candidates.none { existing ->
+    val candidates = VisualHighlightReranker.rerank(speech, visual) +
+        VisualOnlyHighlightDetector.detect(visual, durationMs, targetClipDurationMs, maxClips)
+    val chosen = mutableListOf<ClipCandidate>()
+    for (clip in ReactionSignalFusion.rerank(candidates, visual, energy).sortedByDescending { it.score }) {
+        if (chosen.size >= maxClips) break
+        if (chosen.none { existing ->
                 HighlightDetector.overlapOfShorter(existing.startMs, existing.endMs, clip.startMs, clip.endMs) > 0.65
-            }) candidates += clip
+            }) chosen += clip
     }
-    return ReactionSignalFusion.rerank(candidates, visual, energy).take(maxClips)
+    return chosen
 }

@@ -1,0 +1,5 @@
+Facecam portrait fixture for Android instrumentation
+Photograph of Eileen Collins from NASA, public domain.
+Source and provenance: https://scikit-image.org/docs/0.26.x/api/skimage.data.html#skimage.data.astronaut
+Original file: https://github.com/scikit-image/scikit-image/blob/v0.25.2/skimage/data/astronaut.png
+ClipForge cropped and resized the photograph for use in a synthetic facecam inset.

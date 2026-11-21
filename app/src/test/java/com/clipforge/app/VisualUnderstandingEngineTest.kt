@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -75,6 +76,35 @@ class VisualUnderstandingEngineTest {
         val visual = VisualUnderstandingResult(listOf(VisualActivity(5_000L, 0.4f, true)))
         val audio = listOf(AudioEnergyWindow(15_000L, 16_000L, 0.5f, 0.9f))
         assertEquals(50, ReactionSignalFusion.rerank(listOf(clip), visual, audio).single().score)
+    }
+
+    @Test fun separatesCameraTranslationFromSceneCutAndLocalAction() {
+        val width = VisualFrameSignals.WIDTH
+        val height = VisualFrameSignals.HEIGHT
+        val random = kotlin.random.Random(99)
+        val before = FloatArray(width * height) { random.nextFloat() }
+        val moved = FloatArray(before.size) { index ->
+            val x = index % width
+            if (x + 4 < width) before[index + 4] else 0f
+        }
+        val pan = VisualFrameSignals.compare(1000L, before, moved)
+        assertFalse(pan.sceneChange)
+        assertTrue(pan.cameraMotion > 0.15f)
+        assertEquals(0f, pan.motion, 0.001f)
+
+        val cut = VisualFrameSignals.compare(2000L, FloatArray(before.size), FloatArray(before.size) { 1f })
+        assertTrue(cut.sceneChange)
+        assertEquals(0f, cut.cameraMotion, 0.001f)
+    }
+
+    @Test fun repeatedVisualSignatureIsNotRecommendedTwice() {
+        val samples = (0L..100L).map { second ->
+            val active = second in 10L..20L || second in 60L..70L
+            VisualActivity(second * 1000L, if (active) 0.4f else 0f, false,
+                signature = if (active) 0x556633aa55aacc33L else null)
+        }
+        val clips = VisualOnlyHighlightDetector.detect(VisualUnderstandingResult(samples), 101_000L, 15_000L)
+        assertEquals(1, clips.size)
     }
 
 }

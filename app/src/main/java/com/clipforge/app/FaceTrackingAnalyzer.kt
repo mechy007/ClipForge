@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.graphics.Bitmap
+import android.os.Build
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
@@ -45,10 +46,12 @@ object FaceTrackingAnalyzer {
             var offset = 0L
             while (offset < duration) {
                 currentCoroutineContext().ensureActive()
-                val original = retriever.getFrameAtTime(
-                    (startMs + offset) * 1_000L,
-                    MediaMetadataRetriever.OPTION_CLOSEST
-                )
+                val timeUs = (startMs + offset) * 1_000L
+                val original = if (Build.VERSION.SDK_INT >= 27) {
+                    retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST, 640, 640)
+                } else {
+                    retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                }
                 if (original != null) {
                     val scale = minOf(1f, 640f / maxOf(original.width, original.height))
                     val frame = if (scale < 1f) Bitmap.createScaledBitmap(

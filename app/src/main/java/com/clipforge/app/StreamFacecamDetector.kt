@@ -22,6 +22,7 @@ internal object StreamFacecamDetector {
             val detector = FaceDetection.getClient(
                 FaceDetectorOptions.Builder()
                     .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+                    .setMinFaceSize(0.04f)
                     .build()
             )
             val retriever = MediaMetadataRetriever()
