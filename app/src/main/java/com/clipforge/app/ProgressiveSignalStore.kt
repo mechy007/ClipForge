@@ -55,12 +55,12 @@ internal class ProgressiveSignalStore(
             output.write(encoded)
             output.fd.sync()
             atomic.finishWrite(output)
-            check(file.isFile && file.readBytes().contentEquals(encoded)) {
-                "Signal snapshot commit verification failed"
-            }
         } catch (failure: Exception) {
             atomic.failWrite(output)
             throw failure
+        }
+        check(file.isFile && file.readBytes().contentEquals(encoded)) {
+            "Signal snapshot commit verification failed"
         }
     }
 }
