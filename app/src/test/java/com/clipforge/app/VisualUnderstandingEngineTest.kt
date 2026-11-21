@@ -43,4 +43,19 @@ class VisualUnderstandingEngineTest {
         assertEquals(original.endMs, result.endMs)
         assertTrue(result.score in 50..58)
     }
+    @Test fun staticVideoDoesNotGenerateFalseHighlights() {
+        val frames = (0..90).map { VisualActivity(it * 1_000L, 0.01f, false) }
+        val clips = VisualOnlyHighlightDetector.detect(VisualUnderstandingResult(frames), 91_000L)
+        assertTrue(clips.isEmpty())
+    }
+
+    @Test fun visualCandidatesAreCappedAtRequestedCount() {
+        val frames = (0..300).map { VisualActivity(it * 1_000L, 0.3f, it % 30 == 0) }
+        val clips = VisualOnlyHighlightDetector.detect(
+            VisualUnderstandingResult(frames), 301_000L, 20_000L, 3
+        )
+        assertTrue(clips.isNotEmpty())
+        assertTrue(clips.size <= 3)
+    }
+
 }
