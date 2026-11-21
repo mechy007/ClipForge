@@ -5,68 +5,136 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
+import kotlin.coroutines.suspendCoroutine
 
-/** Renders a single-source 50/50 vertical composition with synchronized audio. */
+/** Creates the same composition for review playback and export. */
 internal object StreamerGameplayRenderer {
-    fun render(
+    suspend fun render(
         context: Context,
         source: Uri,
         destination: File,
         startMs: Long,
         endMs: Long,
         facecam: StreamRegion,
-        gameplay: StreamRegion = StreamRegion(0f, 0f, 1f, 1f),
-        onFinished: (Boolean, String) -> Unit
-    ) {
+        captions: List<CaptionCue> = emptyList(),
+        captionPreset: CaptionPreset = CaptionPreset.CLEAN
+    ) = withContext(Dispatchers.IO) {
         require(startMs >= 0L && endMs > startMs)
-        val temporaryInput = File(context.cacheDir, "clipforge_split_source_${System.nanoTime()}.mp4")
-        Thread {
-            val existing = source.takeIf { it.scheme == "file" }?.path?.let(::File)?.takeIf { it.isFile }
-            val input = existing ?: temporaryInput
-            try {
-                if (existing == null) {
-                    context.contentResolver.openInputStream(source)?.use { stream ->
-                        input.outputStream().use { stream.copyTo(it) }
-                    } ?: error("Source video could not be opened")
+        val existing = source.takeIf { it.scheme == "file" }?.path?.let(::File)
+        val staged = if (existing == null) File.createTempFile("split-source-", ".media", context.cacheDir) else null
+        val input = existing ?: checkNotNull(staged)
+        var uncaptioned: File? = null
+        try {
+            if (staged != null) {
+                val stream = context.contentResolver.openInputStream(source)
+                    ?: error("Source video could not be opened.")
+                stream.use {
+                    staged.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            ensureActive()
+                            val count = it.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                        }
+                    }
                 }
-                val retriever = MediaMetadataRetriever()
-                val dimensions = try {
-                    retriever.setDataSource(input.absolutePath)
-                    val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
-                    val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
-                    w to h
-                } finally { retriever.release() }
-                check(dimensions.first > 0 && dimensions.second > 0) { "Invalid source dimensions" }
-                val cam = StreamerGameplayLayout.facecamCrop(facecam, dimensions.first, dimensions.second)
-                val game = StreamerGameplayLayout.gameplayCrop(gameplay, dimensions.first, dimensions.second)
-                fun crop(r: StreamRegion): String {
-                    val x = (r.left * dimensions.first).toInt().coerceAtLeast(0)
-                    val y = (r.top * dimensions.second).toInt().coerceAtLeast(0)
-                    val w = (r.width * dimensions.first).toInt().coerceAtLeast(2).coerceAtMost(dimensions.first - x)
-                    val h = (r.height * dimensions.second).toInt().coerceAtLeast(2).coerceAtMost(dimensions.second - y)
-                    return "crop=$w:$h:$x:$y,scale=1080:960:flags=bicubic,setsar=1"
-                }
-                val filter = "[0:v]split=2[cam][game];[cam]${crop(cam)}[top];[game]${crop(game)}[bottom];[top][bottom]vstack=inputs=2[v]"
-                val args = arrayOf(
-                    "-y", "-loglevel", "error", "-ss", String.format(Locale.US, "%.3f", startMs / 1000.0),
-                    "-i", input.absolutePath, "-t", String.format(Locale.US, "%.3f", (endMs - startMs) / 1000.0),
-                    "-filter_complex", filter, "-map", "[v]", "-map", "0:a?",
-                    "-c:v", "libopenh264", "-b:v", "4M", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", destination.absolutePath
-                )
-                FFmpegKit.executeWithArgumentsAsync(args) { session ->
-                    if (existing == null) temporaryInput.delete()
-                    onFinished(
-                        ReturnCode.isSuccess(session.returnCode) && destination.isFile && destination.length() > 0L,
-                        session.output ?: "Split-screen render finished"
-                    )
-                }
-            } catch (error: Exception) {
-                if (existing == null) temporaryInput.delete()
-                onFinished(false, error.localizedMessage ?: "Split-screen render failed")
             }
-        }.start()
+            val media = metadata(input)
+            ensureActive()
+            if (captions.isNotEmpty()) {
+                uncaptioned = File.createTempFile("split-uncaptioned-", ".mp4", context.cacheDir)
+            }
+            val raw = uncaptioned ?: destination
+            val session = FFmpegKit.executeWithArguments(
+                arguments(input, raw, startMs, endMs, facecam, media.width, media.height)
+            )
+            check(ReturnCode.isSuccess(session.returnCode)) {
+                session.output?.trim()?.takeIf { it.isNotEmpty() } ?: "Split-screen encoding failed."
+            }
+            ensureActive()
+            if (uncaptioned != null) {
+                // Wait for the callback before deleting files the encoder may still be using.
+                suspendCoroutine<Unit> { continuation ->
+                    CaptionBurnIn.render(context, raw, destination, captions, captionPreset) { ok, message ->
+                        continuation.resumeWith(if (ok) Result.success(Unit) else Result.failure(IllegalStateException(message)))
+                    }
+                }
+            }
+            ensureActive()
+            verify(destination, endMs - startMs, media.hasAudio)
+        } catch (failure: Throwable) {
+            destination.delete()
+            throw failure
+        } finally {
+            uncaptioned?.delete()
+            staged?.delete()
+        }
+    }
+
+    internal fun verify(file: File, durationMs: Long, expectAudio: Boolean) {
+        check(file.isFile && file.length() > 0L) { "The split-screen MP4 is empty." }
+        val rendered = metadata(file, decodeFrame = true)
+        check(rendered.width == StreamerGameplayLayout.OUTPUT_WIDTH &&
+            rendered.height == StreamerGameplayLayout.OUTPUT_HEIGHT) { "Expected a 1080 × 1920 split-screen MP4." }
+        val toleranceMs = minOf(350L, maxOf(100L, durationMs / 5))
+        check(rendered.durationMs in (durationMs - toleranceMs)..(durationMs + toleranceMs) &&
+            rendered.durationMs > 0L) { "The rendered clip duration differs from the selected trim." }
+        check(!expectAudio || rendered.hasAudio) { "The rendered clip is missing its original audio." }
+    }
+
+    private data class VideoMetadata(val width: Int, val height: Int, val durationMs: Long, val hasAudio: Boolean)
+
+    private fun metadata(file: File, decodeFrame: Boolean = false): VideoMetadata {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            check(w > 0 && h > 0) { "Video track has invalid dimensions." }
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull()
+            val rotated = rotation == 90 || rotation == 270
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val audio = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
+            if (decodeFrame) {
+                val frame = if (android.os.Build.VERSION.SDK_INT >= 27) {
+                    retriever.getScaledFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 54, 96)
+                } else {
+                    retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                }
+                checkNotNull(frame) { "The first frame of the split-screen MP4 could not be decoded." }.recycle()
+            }
+            return if (rotated) VideoMetadata(h, w, duration, audio) else VideoMetadata(w, h, duration, audio)
+        } finally {
+            retriever.release()
+        }
+    }
+
+    internal fun arguments(
+        input: File, output: File, startMs: Long, endMs: Long, facecam: StreamRegion, width: Int, height: Int
+    ): Array<String> {
+        val cam = StreamerGameplayLayout.facecamCrop(facecam, width, height)
+        val game = StreamerGameplayLayout.gameplayCrop(StreamRegion(0f, 0f, 1f, 1f), width, height)
+        fun crop(region: StreamRegion): String {
+            val x = (region.left * width).toInt().coerceIn(0, width - 2)
+            val y = (region.top * height).toInt().coerceIn(0, height - 2)
+            val w = (region.width * width).toInt().coerceIn(2, width - x)
+            val h = (region.height * height).toInt().coerceIn(2, height - y)
+            return "crop=$w:$h:$x:$y:exact=1,scale=${StreamerGameplayLayout.OUTPUT_WIDTH}:${StreamerGameplayLayout.PANEL_HEIGHT}:flags=bicubic,setsar=1"
+        }
+        val filter = "[0:v:0]split=2[cam][game];[cam]${crop(cam)}[top];[game]${crop(game)}[bottom];[top][bottom]vstack=inputs=2[v]"
+        fun seconds(ms: Long) = String.format(Locale.US, "%.3f", ms / 1000.0)
+        return arrayOf(
+            "-y", "-loglevel", "error", "-ss", seconds(startMs), "-i", input.absolutePath,
+            "-t", seconds(endMs - startMs), "-filter_complex_threads", "1", "-filter_complex", filter,
+            "-map", "[v]", "-map", "0:a:0?",
+            "-c:v", "libopenh264", "-b:v", "4M", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output.absolutePath
+        )
     }
 }

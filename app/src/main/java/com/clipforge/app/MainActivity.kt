@@ -49,10 +49,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.AspectRatioFrameLayout
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private val Ink = ClipForgePalette.Background
 private val Panel = ClipForgePalette.Surface
@@ -158,19 +161,34 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var exportAspectRatio by rememberSaveable { mutableFloatStateOf(9f / 16f) }
     var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
     var verticalLayoutChoice by rememberSaveable { mutableStateOf<String?>(null) }
-    var facecamCorner by rememberSaveable { mutableStateOf<String?>(null) }
-    var detectedFacecam by remember(video) { mutableStateOf<StreamRegion?>(null) }
-    var facecamDetectionBusy by remember { mutableStateOf(false) }
-    var facecamDetectionMessage by remember { mutableStateOf("") }
-    val splitRegion = if (exportAspectRatio < 0.8f && verticalLayoutChoice == "split") {
-        detectedFacecam ?: when (facecamCorner) {
-            "Top left" -> StreamRegion(0f, 0f, 0.32f, 0.38f)
-            "Top right" -> StreamRegion(0.68f, 0f, 1f, 0.38f)
-            "Bottom left" -> StreamRegion(0f, 0.62f, 0.32f, 1f)
-            "Bottom right" -> StreamRegion(0.68f, 0.62f, 1f, 1f)
-            else -> null
+    var facecamCorner by remember(video) { mutableStateOf<String?>(null) }
+    var facecamRegion by remember(video) { mutableStateOf<StreamRegion?>(null) }
+    var facecamDetectionBusy by remember(video) { mutableStateOf(false) }
+    var facecamDetectionMessage by remember(video) { mutableStateOf("") }
+    var facecamScanRequest by remember(video) { mutableIntStateOf(0) }
+    var adjustFacecam by remember(video) { mutableStateOf(false) }
+    val splitSelected = exportAspectRatio == 9f / 16f && verticalLayoutChoice == "split"
+    val splitRegion = facecamRegion.takeIf { splitSelected }
+    LaunchedEffect(video, splitSelected, duration > 0L, facecamScanRequest) {
+        val source = video ?: return@LaunchedEffect
+        if (!splitSelected || duration <= 0L || facecamRegion != null) return@LaunchedEffect
+        facecamDetectionBusy = true
+        facecamDetectionMessage = "Finding the facecam…"
+        try {
+            facecamRegion = StreamFacecamDetector.detect(context, source, duration)
+            facecamDetectionMessage = if (facecamRegion == null) {
+                "Facecam could not be located reliably. Select a corner and adjust the region."
+            } else {
+                "Facecam detected. Preview the split or adjust the region below."
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            facecamDetectionMessage = "Facecam detection failed. Select a corner to set the region."
+        } finally {
+            facecamDetectionBusy = false
         }
-    } else null
+    }
     var previewRetryKey by remember(video) { mutableIntStateOf(0) }
     var previewError by remember(video) { mutableStateOf<String?>(null) }
     var videoDisplayName by remember(video) { mutableStateOf("") }
@@ -287,7 +305,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
         val src = video; val clip = pending
-        if (dest != null && src != null && clip != null) {
+        if (dest != null && src != null && clip != null && (!splitSelected || splitRegion != null)) {
             val cues = if (burnCaptions) CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs) else emptyList()
             ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
                 aspectRatio = exportAspectRatio,
@@ -304,6 +322,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         val chosen = clips.filter { it in selectedClips }
         if (treeUri == null) {
             exportMessage = "Batch export cancelled."
+        } else if (splitSelected && splitRegion == null) {
+            exportMessage = "Set the facecam region in Studio before exporting."
         } else if (source == null || chosen.isEmpty()) {
             exportMessage = "Select at least one highlight before exporting."
         } else {
@@ -350,6 +370,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
         }
     }
     fun save(clip: ClipCandidate) {
+        if (splitSelected && splitRegion == null) {
+            exportMessage = "Set the facecam region in Studio before exporting."
+            return
+        }
         pending = clip
         savePicker.launch("ClipForge_${clip.startMs / 1000}s.mp4")
     }
@@ -912,45 +936,53 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             label = { Text("50/50 · streamer on top, gameplay below") }
                         )
                     }
-                    if (verticalLayoutChoice == "split") {
-                        Button(
+                    if (splitSelected) {
+                        if (facecamDetectionMessage.isNotBlank()) {
+                            Text(facecamDetectionMessage, color = Muted, fontSize = 11.sp)
+                        }
+                        OutlinedButton(
                             onClick = {
-                                val source = video
-                                if (source != null && duration > 0L) {
-                                    scope.launch {
-                                        facecamDetectionBusy = true
-                                        facecamDetectionMessage = "Finding a stable facecam position…"
-                                        try {
-                                            val region = StreamFacecamDetector.detect(context, source, duration)
-                                            detectedFacecam = region
-                                            facecamDetectionMessage = if (region == null) {
-                                                "No reliable facecam detected. Choose its corner manually."
-                                            } else {
-                                                "Facecam found. You can override it using a corner below."
-                                            }
-                                        } catch (error: Exception) {
-                                            detectedFacecam = null
-                                            facecamDetectionMessage = "Detection unavailable: ${error.localizedMessage ?: "unknown error"}. Choose a corner."
-                                        } finally {
-                                            facecamDetectionBusy = false
-                                        }
-                                    }
-                                }
+                                facecamCorner = null
+                                facecamRegion = null
+                                facecamScanRequest++
                             },
-                            enabled = !analyzing && !facecamDetectionBusy && video != null && duration > 0L,
+                            enabled = !analyzing && !facecamDetectionBusy && duration > 0L,
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text(if (facecamDetectionBusy) "Detecting facecam…" else "Auto-detect facecam") }
-                        if (facecamDetectionMessage.isNotBlank()) Text(facecamDetectionMessage, color = Muted, fontSize = 11.sp)
-                        Text("Choose the source facecam corner. This is an approximate crop; check your output before sharing.", color = Muted, fontSize = 11.sp)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf("Top left", "Top right", "Bottom left", "Bottom right").forEach { corner ->
-                                FilterChip(
-                                    selected = facecamCorner == corner,
-                                    onClick = { facecamCorner = corner; detectedFacecam = null; facecamDetectionMessage = "Manual facecam corner selected." },
-                                    label = { Text(corner, fontSize = 9.sp) },
-                                    enabled = !analyzing
-                                )
+                        ) { Text(if (facecamDetectionBusy) "Detecting facecam…" else "Detect facecam again") }
+                        listOf("Top", "Bottom").forEach { row ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("left", "right").forEach { side ->
+                                    val corner = "$row $side"
+                                    FilterChip(
+                                        selected = facecamCorner == corner,
+                                        onClick = {
+                                            facecamCorner = corner
+                                            val left = if (side == "left") 0f else 0.68f
+                                            val top = if (row == "Top") 0f else 0.62f
+                                            facecamRegion = StreamRegion(left, top, (left + 0.32f).coerceAtMost(1f), (top + 0.38f).coerceAtMost(1f))
+                                            facecamDetectionMessage = "Manual facecam corner selected."
+                                        },
+                                        label = { Text(corner) },
+                                        enabled = !analyzing && !facecamDetectionBusy
+                                    )
+                                }
                             }
+                        }
+                        splitRegion?.let { region ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { adjustFacecam = !adjustFacecam },
+                                    enabled = !analyzing
+                                ) { Text(if (adjustFacecam) "Done adjusting" else "Adjust region") }
+                                OutlinedButton(
+                                    onClick = {
+                                        val start = editorStartMs.coerceIn(0L, duration - 1)
+                                        previewingClip = ClipCandidate(start, minOf(duration, start + 5_000L), "Split layout sample", "", 0)
+                                    },
+                                    enabled = duration > 0L && !analyzing
+                                ) { Text("Preview split") }
+                            }
+                            if (adjustFacecam) FacecamRegionControls(region) { facecamRegion = it }
                         }
                     }
                 }
@@ -1031,7 +1063,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
                     }
-                }, enabled = ready && !analyzing && duration > 0L && (exportAspectRatio >= 0.8f || (verticalLayoutChoice != null && (verticalLayoutChoice != "split" || facecamCorner != null || detectedFacecam != null))), modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                }, enabled = ready && !analyzing && duration > 0L && (exportAspectRatio != 9f / 16f || (verticalLayoutChoice != null && (!splitSelected || splitRegion != null))), modifier = Modifier.fillMaxWidth().height(54.dp)) {
                     Icon(Icons.Default.AutoAwesome, null)
                     Text(if (analyzing) "  Analyzing video…" else "  Find my best clips")
                 }
@@ -1213,7 +1245,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                 }
             }
-            if (activeSection == "Highlights") previewingClip?.let { clip ->
+            previewingClip?.let { clip ->
                 val source = video
                 if (source != null) {
                     AlertDialog(
@@ -1225,16 +1257,31 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     "${time(clip.startMs)} – ${time(clip.endMs)} · ${((clip.endMs - clip.startMs) / 1000L)} sec",
                                     color = Muted, fontSize = 11.sp
                                 )
-                                VideoPreview(
-                                    uri = source,
-                                    onDuration = { },
-                                    onError = { previewError = it },
-                                    retryKey = previewRetryKey,
-                                    aspectRatio = exportAspectRatio,
-                                    startAtMs = clip.startMs,
-                                    endAtMs = clip.endMs
-                                )
-                                Text(clip.hook, color = Muted, fontSize = 11.sp, maxLines = 4)
+                                if (splitSelected) {
+                                    val region = splitRegion
+                                    if (region == null) {
+                                        Text("Set the facecam region in Studio to preview this layout.")
+                                    } else {
+                                        SplitClipPreview(
+                                            source, clip, region,
+                                            if (burnCaptions) CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs) else emptyList(),
+                                            CaptionPreset.valueOf(captionPreset)
+                                        )
+                                    }
+                                } else {
+                                    var clipPreviewError by remember(source, clip) { mutableStateOf<String?>(null) }
+                                    VideoPreview(
+                                        uri = source,
+                                        onDuration = { },
+                                        onError = { clipPreviewError = it },
+                                        retryKey = previewRetryKey,
+                                        aspectRatio = exportAspectRatio,
+                                        startAtMs = clip.startMs,
+                                        endAtMs = clip.endMs
+                                    )
+                                    clipPreviewError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                                }
+                                if (clip.hook.isNotBlank()) Text(clip.hook, color = Muted, fontSize = 11.sp, maxLines = 4)
                             }
                         },
                         confirmButton = { TextButton(onClick = { previewingClip = null }) { Text("Close") } }
@@ -1295,6 +1342,67 @@ private fun formatElapsed(seconds: Long): String = "%d:%02d".format(seconds / 60
 private fun time(ms: Long): String = "%d:%02d".format(ms / 60_000L, (ms / 1000L) % 60L)
 
 @Composable
+private fun FacecamRegionControls(region: StreamRegion, onChange: (StreamRegion) -> Unit) {
+    val minimumSize = 0.02f
+    val width = region.width
+    val height = region.height
+    Text("Horizontal position")
+    Slider(region.left, { x -> onChange(StreamRegion(x, region.top, (x + width).coerceAtMost(1f), region.bottom)) },
+        valueRange = 0f..(1f - width), enabled = width < 1f)
+    Text("Vertical position")
+    Slider(region.top, { y -> onChange(StreamRegion(region.left, y, region.right, (y + height).coerceAtMost(1f))) },
+        valueRange = 0f..(1f - height), enabled = height < 1f)
+    Text("Width")
+    Slider(width, { w -> onChange(region.copy(right = (region.left + w).coerceAtMost(1f))) },
+        valueRange = minimumSize..(1f - region.left).coerceAtLeast(minimumSize))
+    Text("Height")
+    Slider(height, { h -> onChange(region.copy(bottom = (region.top + h).coerceAtMost(1f))) },
+        valueRange = minimumSize..(1f - region.top).coerceAtLeast(minimumSize))
+}
+
+@Composable
+private fun SplitClipPreview(
+    source: Uri,
+    clip: ClipCandidate,
+    region: StreamRegion,
+    captions: List<CaptionCue>,
+    preset: CaptionPreset
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var retry by remember { mutableIntStateOf(0) }
+    var preview by remember(source, clip, region, captions, preset, retry) { mutableStateOf<Uri?>(null) }
+    var error by remember(source, clip, region, captions, preset, retry) { mutableStateOf<String?>(null) }
+    LaunchedEffect(source, clip, region, captions, preset, retry) {
+        var file: File? = null
+        try {
+            val output = File.createTempFile("split-preview-", ".mp4", context.cacheDir)
+            file = output
+            StreamerGameplayRenderer.render(context, source, output, clip.startMs, clip.endMs, region, captions, preset)
+            preview = Uri.fromFile(output)
+            awaitCancellation()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            error = failure.localizedMessage ?: "Could not render the split-screen preview."
+        } finally {
+            file?.delete()
+        }
+    }
+    val uri = preview
+    when {
+        error != null -> {
+            Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
+            OutlinedButton(onClick = { retry++ }) { Text("Retry preview") }
+        }
+        uri != null -> VideoPreview(uri, onDuration = {}, onError = { error = it }, retryKey = retry)
+        else -> {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Text("Rendering split-screen preview…", color = Muted, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
 private fun VideoPreview(
     uri: Uri,
     onDuration: (Long) -> Unit,
@@ -1307,7 +1415,16 @@ private fun VideoPreview(
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember(uri, retryKey, startAtMs, endAtMs) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(uri))
+            val media = MediaItem.Builder().setUri(uri)
+            if (startAtMs != null && endAtMs != null) {
+                media.setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(startAtMs)
+                        .setEndPositionMs(endAtMs)
+                        .build()
+                )
+            }
+            setMediaItem(media.build())
         }
     }
     var isPlaying by remember(player) { mutableStateOf(false) }
@@ -1320,7 +1437,6 @@ private fun VideoPreview(
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
                     durationMs = player.duration.coerceAtLeast(0L)
-                    startAtMs?.let { player.seekTo(it.coerceIn(0L, durationMs.coerceAtLeast(0L))) }
                     onDuration(durationMs)
                 }
             }
@@ -1340,10 +1456,6 @@ private fun VideoPreview(
         while (true) {
             if (!isSeeking) positionMs = player.currentPosition.coerceAtLeast(0L)
             if (player.duration > 0L) durationMs = player.duration
-            if (endAtMs != null && player.isPlaying && player.currentPosition >= endAtMs) {
-                player.pause()
-                player.seekTo(endAtMs.coerceIn(0L, durationMs.coerceAtLeast(0L)))
-            }
             delay(300L)
         }
     }
@@ -1360,13 +1472,21 @@ private fun VideoPreview(
                 useController = false
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
             } },
+            update = { it.player = player },
             modifier = Modifier.widthIn(max = previewMaxWidth).aspectRatio(aspectRatio)
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             IconButton(onClick = { player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L)) }) {
                 Icon(Icons.Default.Replay10, contentDescription = "Rewind 10 seconds", tint = Color.White)
             }
-            IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) {
+            IconButton(onClick = {
+                if (player.isPlaying) {
+                    player.pause()
+                } else {
+                    if (player.playbackState == Player.STATE_ENDED) player.seekTo(0L)
+                    player.play()
+                }
+            }) {
                 Icon(
                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause preview" else "Play preview",

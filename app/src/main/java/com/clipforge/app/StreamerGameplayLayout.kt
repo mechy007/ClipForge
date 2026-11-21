@@ -37,11 +37,11 @@ internal object StreamerGameplayLayout {
         // inside the source at the panel aspect, crop symmetrically instead.
         val desiredHeight = maxOf(region.height, region.width / desiredNormalizedAspect)
         val h = minOf(desiredHeight, 1f, 1f / desiredNormalizedAspect)
-        val w = h * desiredNormalizedAspect
+        val w = minOf(1f, h * desiredNormalizedAspect)
         val centerX = (region.left + region.right) / 2f
         val centerY = (region.top + region.bottom) / 2f
         val left = (centerX - w / 2f).coerceIn(0f, 1f - w)
         val top = (centerY - h / 2f).coerceIn(0f, 1f - h)
-        return StreamRegion(left, top, left + w, top + h)
+        return StreamRegion(left, top, (left + w).coerceAtMost(1f), (top + h).coerceAtMost(1f))
     }
 }

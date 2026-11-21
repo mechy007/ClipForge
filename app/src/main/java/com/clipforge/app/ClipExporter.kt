@@ -16,6 +16,7 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -158,14 +159,17 @@ object ClipExporter {
             }
             val output = File(context.cacheDir, "clipforge_split_${System.nanoTime()}.mp4")
             mainHandler.post { onStatus("Rendering streamer/gameplay split…") }
-            StreamerGameplayRenderer.render(
-                context, source, output, startMs, endMs, splitFacecamRegion
-            ) { success, detail ->
-                if (!success) {
+            ioExecutor.execute {
+                try {
+                    runBlocking {
+                        StreamerGameplayRenderer.render(
+                            context, source, output, startMs, endMs, splitFacecamRegion, captionCues, captionPreset
+                        )
+                    }
+                    copyToDestination(context, output, destination, onFinished)
+                } catch (error: Exception) {
                     output.delete()
-                    mainHandler.post { onFinished(false, "Split export failed: $detail") }
-                } else {
-                    finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished)
+                    mainHandler.post { onFinished(false, "Split export failed: ${error.localizedMessage ?: "media error"}") }
                 }
             }
             return

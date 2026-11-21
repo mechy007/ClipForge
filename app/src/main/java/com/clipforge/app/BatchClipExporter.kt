@@ -37,13 +37,13 @@ object BatchClipExporter {
         var completed = 0
         var batchSourceCache: java.io.File? = null
         try {
-        val exportSource = if (faceTrackingPath.isNotEmpty() && source.scheme != "file") {
+        val exportSource = if ((faceTrackingPath.isNotEmpty() || splitFacecamRegion != null) && source.scheme != "file") {
             val cached = java.io.File(context.cacheDir, "clipforge_batch_source_${System.nanoTime()}.mp4")
             batchSourceCache = cached
             withContext(Dispatchers.IO) {
                 resolver.openInputStream(source)?.use { input ->
                     cached.outputStream().buffered().use { output -> input.copyTo(output) }
-                } ?: error("Could not read the source video for face-aware batch export.")
+                } ?: error("Could not read the source video for batch export.")
             }
             check(cached.isFile && cached.length() > 0L) { "The cached batch source video is empty." }
             Uri.fromFile(cached)
