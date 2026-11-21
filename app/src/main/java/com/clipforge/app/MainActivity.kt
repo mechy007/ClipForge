@@ -144,6 +144,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var message by remember { mutableStateOf(if (initialVideoUri == null) "Import a video to discover its best moments." else "Your creator live recording is ready. Run AI highlight detection.") }
     var clips by remember { mutableStateOf<List<ClipCandidate>>(emptyList()) }
     var selectedClips by remember { mutableStateOf<Set<ClipCandidate>>(emptySet()) }
+    val batchLimit = BatchClipExporter.MAX_CLIPS_PER_BATCH
     val batchStatus by BatchExportCoordinator.status.collectAsState()
     val batchExporting = batchStatus.running
     var activeSection by rememberSaveable { mutableStateOf("Editor") }
@@ -258,7 +259,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             val decision = runCatching { ClipReviewDecision.valueOf(saved.reviewStatus) }.getOrDefault(ClipReviewDecision.PENDING)
             candidate to decision
         }.toMap()
-        selectedClips = clips.filter { reviewed[it] != ClipReviewDecision.REJECTED }.toSet()
+        selectedClips = clips.filter { reviewed[it] != ClipReviewDecision.REJECTED }.take(batchLimit).toSet()
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -677,7 +678,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 video = results.source
                                 duration = results.durationMs
                                 clips = results.highlights
-                                selectedClips = results.highlights.toSet()
+                                selectedClips = results.highlights.take(batchLimit).toSet()
                                 transcriptSegments = results.transcript
                                 reviewed = emptyMap()
                                 editing = null
@@ -730,7 +731,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 activeProjectId = project.id
                                 savedProjectHighlights = projectDb.listHighlights(project.id)
                                 clips = savedProjectHighlights.map { ClipCandidate(it.startMs, it.endMs, it.title, it.transcript, it.score) }
-                                selectedClips = clips.toSet()
+                                selectedClips = clips.take(batchLimit).toSet()
                                 transcriptSegments = projectDb.listTranscript(project.id)
                                 message = "Restored saved project."
                                 activeSection = if (clips.isNotEmpty()) "Highlights" else "Editor"
@@ -781,7 +782,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 val mergedCandidates = (clips + candidates).distinctBy { it.startMs to it.endMs }
                                     .sortedByDescending { it.score }
                                 clips = mergedCandidates
-                                selectedClips = selectedClips + candidates
+                                selectedClips = (selectedClips + candidates).take(batchLimit).toSet()
                                 activeSection = "Highlights"
                                 message = if (hasRecordingStart) "Live markers automatically aligned to the local recording start. Review candidates before exporting." else "No linked recording start time was saved. Markers use broadcast-relative times; verify alignment manually before exporting."
                             }
@@ -1045,7 +1046,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             activeProjectId = persisted.first
                             savedProjects = persisted.second
                             clips = found
-                            selectedClips = found.toSet()
+                            selectedClips = found.take(batchLimit).toSet()
                             if (found.isNotEmpty()) activeSection = "Highlights"
                             message = if (found.isEmpty()) "No clear highlights detected. Try a longer video with visible action."
                                 else "Analysis complete · ${found.size} clips ranked"
@@ -1118,18 +1119,18 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 }
             }
             if (activeSection == "Highlights" && clips.isNotEmpty()) {
-                val reviewableClips = clips.filter { reviewed[it] != ClipReviewDecision.REJECTED }
+                val reviewableClips = clips.filter { reviewed[it] != ClipReviewDecision.REJECTED }.take(batchLimit)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("AI Highlights", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text("${clips.size} moments ranked · ${selectedClips.size} selected", color = Muted, fontSize = 11.sp)
+                        Text("${clips.size} moments ranked · ${selectedClips.size}/$batchLimit selected", color = Muted, fontSize = 11.sp)
                         Text("Signal scores compare content cues; they do not predict views or virality.", color = Muted, fontSize = 10.sp)
                     }
                     TextButton(
                         onClick = { selectedClips = if (selectedClips.containsAll(reviewableClips)) emptySet() else reviewableClips.toSet() },
                         enabled = !batchExporting
                     ) {
-                        Text(if (selectedClips.containsAll(reviewableClips)) "Deselect all" else "Select all")
+                        Text(if (selectedClips.containsAll(reviewableClips)) "Clear selection" else "Select top ${reviewableClips.size}")
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1166,7 +1167,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         )
                     }
                 }
-                Button(onClick = { selectedClips = clips.filter { reviewed[it] == ClipReviewDecision.APPROVED }.toSet() },
+                Button(onClick = { selectedClips = clips.filter { reviewed[it] == ClipReviewDecision.APPROVED }.take(batchLimit).toSet() },
                     enabled = !batchExporting && reviewed.values.any { it == ClipReviewDecision.APPROVED },
                     modifier = Modifier.fillMaxWidth()) { Text("Select approved clips only") }
                 Button(onClick = { batchPicker.launch(null) }, enabled = selectedClips.isNotEmpty() && !batchExporting, modifier = Modifier.fillMaxWidth()) {
@@ -1177,7 +1178,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     LinearProgressIndicator(progress = fraction.coerceIn(0f, 1f), modifier = Modifier.fillMaxWidth())
                     Text("Verified ${batchStatus.completed} of ${batchStatus.total} clips", color = Muted, fontSize = 11.sp)
                 }
-                if (batchStatus.message.startsWith("Batch export stopped:")) {
+                if (batchStatus.retryAvailable) {
                     OutlinedButton(
                         onClick = { batchPicker.launch(null) },
                         enabled = !batchExporting && selectedClips.isNotEmpty(),
@@ -1188,7 +1189,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = clip in selectedClips, onCheckedChange = { checked -> selectedClips = if (checked) selectedClips + clip else selectedClips - clip }, enabled = !batchExporting)
+                                Checkbox(
+                                    checked = clip in selectedClips,
+                                    onCheckedChange = { checked -> selectedClips = if (checked) selectedClips + clip else selectedClips - clip },
+                                    enabled = !batchExporting && (clip in selectedClips || selectedClips.size < batchLimit)
+                                )
                                 Box(Modifier.size(32.dp).background(Accent.copy(alpha = .18f), CircleShape), contentAlignment = Alignment.Center) {
                                     Text("${index + 1}", color = Accent, fontWeight = FontWeight.Bold)
                                 }

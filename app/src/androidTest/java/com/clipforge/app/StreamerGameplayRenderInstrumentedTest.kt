@@ -37,6 +37,10 @@ class StreamerGameplayRenderInstrumentedTest {
                 val region = StreamRegion(x / 640f, y / 360f, (x + 160) / 640f, (y + 144) / 360f)
                 StreamerGameplayRenderer.render(context, Uri.fromFile(source), output, 400L, 1400L, region)
                 assertPanels(output)
+                EncodedClipVerifier.verify(context, Uri.fromFile(output), 1000L, 9f / 16f, true, split = true)
+                assertTrue(runCatching {
+                    EncodedClipVerifier.verify(context, Uri.fromFile(output), 1000L, 1f, true)
+                }.isFailure)
                 assertTrue(runCatching { StreamerGameplayRenderer.verify(output, 2000L, true) }.isFailure)
             }
         } finally {

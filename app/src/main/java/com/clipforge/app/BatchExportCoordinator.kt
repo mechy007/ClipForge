@@ -17,7 +17,8 @@ data class BatchExportStatus(
     val sourceUri: String? = null,
     val folderUri: String? = null,
     val aspectRatio: Float = 9f / 16f,
-    val completedClips: List<ClipCandidate> = emptyList()
+    val completedClips: List<ClipCandidate> = emptyList(),
+    val retryAvailable: Boolean = false
 )
 
 /**
@@ -58,12 +59,16 @@ object BatchExportCoordinator {
             source.toString(), folder.toString(), aspectRatio,
             transcript.toList(), captionPreset, faceTrackingPath.toList(), splitFacecamRegion
         )
-        val retryingInterruptedBatch = previous.message.startsWith("Batch export stopped:")
+        val retryingInterruptedBatch = previous.retryAvailable
         // Never reuse outputs after the user changes captions or crop tracking.
         val sameBatch = retryingInterruptedBatch && verifiedSettings == settings
         // A retry may use a different selection: only count previously exported clips
         // that are still selected, and never count a duplicate more than once.
         val selectedClips = clips.toList()
+        if (selectedClips.size > BatchClipExporter.MAX_CLIPS_PER_BATCH) {
+            mutableStatus.value = previous.copy(message = "Select up to ${BatchClipExporter.MAX_CLIPS_PER_BATCH} clips per batch.")
+            return
+        }
         require(selectedClips.distinctBy { it.startMs to it.endMs }.size == selectedClips.size) {
             "Duplicate highlight ranges cannot be exported in the same batch."
         }
@@ -74,6 +79,7 @@ object BatchExportCoordinator {
         if (remaining.isEmpty()) {
             mutableStatus.value = previous.copy(
                 running = false,
+                retryAvailable = false,
                 completed = alreadyCompleted.size,
                 completedClips = alreadyCompleted,
                 total = selectedClips.size,
@@ -124,7 +130,8 @@ object BatchExportCoordinator {
             } catch (error: Exception) {
                 mutableStatus.value = mutableStatus.value.copy(
                     running = false,
-                    message = "Batch export stopped: ${error.localizedMessage ?: "unknown error"}. ${mutableStatus.value.completed} clip(s) are verified; retry to continue with the remaining clips."
+                    retryAvailable = true,
+                    message = "${mutableStatus.value.completed}/${selectedClips.size} clips saved and verified. ${error.localizedMessage ?: "Export failed."}"
                 )
             }
         }

@@ -28,6 +28,14 @@ class BatchExportPreflightInstrumentedTest {
         }
     }
 
+    @Test fun oversizedBatchIsRejectedBeforeWritingDocuments() {
+        val clips = (0..BatchClipExporter.MAX_CLIPS_PER_BATCH).map { index ->
+            ClipCandidate(index * 30000L, (index + 1) * 30000L, "Clip $index", "", 70)
+        }
+        val result = runCatching { runBlocking { BatchClipExporter.exportAll(context, folder, source, clips) } }
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+    }
+
     @Test fun invalidRangesAreRejectedBeforeWritingDocuments() {
         try {
             runBlocking {

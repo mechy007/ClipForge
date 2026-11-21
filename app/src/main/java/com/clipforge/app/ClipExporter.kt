@@ -30,20 +30,22 @@ object ClipExporter {
         source: File,
         destination: Uri,
         onFinished: (Boolean, String) -> Unit,
-        cleanup: File? = null
+        cleanup: File? = null,
+        verify: (File) -> Unit = {}
     ) {
         ioExecutor.execute {
             try {
                 check(source.isFile && source.length() > 0L) { "The render did not produce a video." }
+                verify(source)
                 val stream = context.contentResolver.openOutputStream(destination, "w")
                     ?: error("Could not open the selected save location.")
                 stream.use { target -> source.inputStream().use { it.copyTo(target) } }
-                source.delete()
-                cleanup?.delete()
                 mainHandler.post { onFinished(true, "Clip exported successfully.") }
             } catch (error: Exception) {
-                // Keep the completed render available in cache if saving fails.
-                mainHandler.post { onFinished(false, "Save failed: ${error.localizedMessage ?: "unknown error"}; rendered MP4 retained for retry.") }
+                mainHandler.post { onFinished(false, "Export could not be saved: ${error.localizedMessage ?: "unknown error"}") }
+            } finally {
+                source.delete()
+                cleanup?.delete()
             }
         }
     }
@@ -58,7 +60,8 @@ object ClipExporter {
         captionCues: List<CaptionCue>,
         captionPreset: CaptionPreset,
         onStatus: (String) -> Unit,
-        onFinished: (Boolean, String) -> Unit
+        onFinished: (Boolean, String) -> Unit,
+        verify: (File) -> Unit
     ) {
         val temporaryInput = File(context.cacheDir, "clipforge_source_${System.nanoTime()}.mp4")
         val output = File(context.cacheDir, "clipforge_face_${System.nanoTime()}.mp4")
@@ -92,7 +95,7 @@ object ClipExporter {
                             onFinished(false, "Face-aware export failed: $detail")
                         }
                     } else {
-                        finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished)
+                        finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished, verify)
                     }
                 }
             } catch (error: Exception) {
@@ -112,10 +115,11 @@ object ClipExporter {
         captionCues: List<CaptionCue>,
         captionPreset: CaptionPreset,
         onStatus: (String) -> Unit,
-        onFinished: (Boolean, String) -> Unit
+        onFinished: (Boolean, String) -> Unit,
+        verify: (File) -> Unit
     ) {
         if (captionCues.isEmpty()) {
-            copyToDestination(context, output, destination, onFinished)
+            copyToDestination(context, output, destination, onFinished, verify = verify)
         } else {
             mainHandler.post { onStatus("Burning captions into the video…") }
             val captioned = File(context.cacheDir, "clipforge_captioned_${System.nanoTime()}.mp4")
@@ -125,7 +129,7 @@ object ClipExporter {
                     captioned.delete()
                     mainHandler.post { onFinished(false, message) }
                 } else {
-                    copyToDestination(context, captioned, destination, onFinished, output)
+                    copyToDestination(context, captioned, destination, onFinished, output, verify)
                 }
             }
         }
@@ -175,10 +179,17 @@ object ClipExporter {
             return
         }
 
+        val normalizedAspect = aspectRatio.coerceIn(0.5f, 2.0f)
+        val verify: (File) -> Unit = { rendered ->
+            EncodedClipVerifier.verify(
+                context, Uri.fromFile(rendered), endMs - startMs, normalizedAspect,
+                EncodedClipVerifier.sourceHasAudio(context, source), decodeFrame = true
+            )
+        }
         if (faceTrackingPath.isNotEmpty()) {
             exportFaceAware(
                 context, source, destination, startMs, endMs, faceTrackingPath,
-                captionCues, captionPreset, onStatus, onFinished
+                captionCues, captionPreset, onStatus, onFinished, verify
             )
             return
         }
@@ -194,7 +205,7 @@ object ClipExporter {
             )
             .build()
         val verticalCrop = Presentation.createForAspectRatio(
-            aspectRatio.coerceIn(0.5f, 2.0f),
+            normalizedAspect,
             Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         )
         val editedItem = EditedMediaItem.Builder(clippedItem)
@@ -204,7 +215,7 @@ object ClipExporter {
         val transformer = Transformer.Builder(context)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished)
+                    finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished, verify)
                 }
 
                 override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
