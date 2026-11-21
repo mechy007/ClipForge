@@ -41,7 +41,7 @@ internal object DownloadWhileAnalyzing {
         ) { publish ->
             YouTubeSectionDownloader.download(
                 context, url, height, durationMs,
-                File(scopedDirectory, "downloaded-sections"), publish
+                File(scopedDirectory, "downloaded-sections"), publish, onDownloadProgress
             )
         }
     }
