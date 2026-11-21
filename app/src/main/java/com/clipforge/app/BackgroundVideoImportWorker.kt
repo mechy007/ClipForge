@@ -1,16 +1,13 @@
 package com.clipforge.app
 
-import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import androidx.work.ForegroundInfo
@@ -36,7 +33,7 @@ class BackgroundVideoImportWorker(context: Context, params: WorkerParameters) : 
             Data.Builder().putString(ERROR, "Missing video URI").build()
         )
         return try {
-            setForeground(notification("Importing video", 0))
+            setForeground(notification("Importing video", -1))
             var lastPercent = -1
             val imported = LocalVideoImporter.import(applicationContext, Uri.parse(source)) { p ->
                 val percent = p.totalBytes?.takeIf { it > 0L }
@@ -66,6 +63,7 @@ class BackgroundVideoImportWorker(context: Context, params: WorkerParameters) : 
             Intent(applicationContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val cancel = androidx.work.WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)
@@ -74,6 +72,7 @@ class BackgroundVideoImportWorker(context: Context, params: WorkerParameters) : 
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(open)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel import", cancel)
             .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ForegroundInfo(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
