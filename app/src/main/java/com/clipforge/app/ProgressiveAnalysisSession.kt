@@ -82,6 +82,23 @@ internal class ProgressiveAnalysisSession(
         return analyze(source, durationMs, language, onStatus)
     }
 
+    /**
+     * Restore the complete timeline for the editor, caption track and clip review.
+     * A partially processed video is not a valid source for final export.
+     */
+    fun completedSignals(durationMs: Long): ProgressiveSignalIntegration.Signals {
+        require(durationMs > 0L)
+        val expected = ProgressiveSegmentPlanner.plan(durationMs).map { it.index }.toSet()
+        val processed = checkpoint.processedIndices()
+        check(processed == expected) {
+            "Progressive analysis incomplete: ${processed.size}/${expected.size} segments processed"
+        }
+        val signals = ProgressiveSignalIntegration.restore(store, processed)
+        require(signals.transcript.all { it.startMs >= 0L && it.endMs <= durationMs })
+        require(signals.audioEnergy.all { it.startMs >= 0L && it.endMs <= durationMs })
+        return signals
+    }
+
     fun completedSegments(): Set<Int> = checkpoint.processedIndices()
 
     private fun String.sha256(): String =
