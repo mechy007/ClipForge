@@ -157,4 +157,23 @@ class ProgressiveAnalysisInstrumentedTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun mismatchedTimelineIsRejectedBeforeCheckpointFinalization() {
+        val dir = directory()
+        try {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val session = ProgressiveAnalysisSession(context, "wrong-timeline", dir)
+            val media = File(dir, "finalized.mp4").apply { writeText("placeholder") }
+            val wrong = FinalizedMediaSegment(ProgressiveSegment(0, 0L, 59_000L), media)
+            try {
+                kotlinx.coroutines.runBlocking {
+                    session.analyze(FinalizedLocalSegmentSource(listOf(wrong)), 60_000L)
+                }
+                fail("A mismatched segment timeline must be rejected")
+            } catch (expected: IllegalArgumentException) {
+                assertTrue(expected.message.orEmpty().contains("planned timeline"))
+            }
+            assertTrue(session.completedSegments().isEmpty())
+        } finally { dir.deleteRecursively() }
+    }
+
 }
