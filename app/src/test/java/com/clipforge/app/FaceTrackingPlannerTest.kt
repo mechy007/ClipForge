@@ -36,4 +36,17 @@ class FaceTrackingPlannerTest {
         ))
         assertTrue(path.isEmpty())
     }
+    @Test fun firstFaceNearEdgeNeverPlacesCropOutsideFrame() {
+        val observations = listOf(
+            FaceObservation(0L, NormalizedFace(0.0f, 0.0f, 0.08f, 0.10f)),
+            FaceObservation(1_000L, NormalizedFace(0.92f, 0.90f, 1.0f, 1.0f))
+        )
+        val path = FaceTrackingPlanner.plan(
+            observations, targetAspectRatio = 9f / 16f, sourceAspectRatio = 16f / 9f
+        )
+        assertTrue(path.isNotEmpty())
+        assertTrue(path.all { it.centerX >= it.width / 2f && it.centerX <= 1f - it.width / 2f })
+        assertTrue(path.all { it.centerY >= it.height / 2f && it.centerY <= 1f - it.height / 2f })
+    }
+
 }
