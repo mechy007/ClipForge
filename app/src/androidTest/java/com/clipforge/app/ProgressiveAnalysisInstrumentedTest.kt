@@ -93,4 +93,46 @@ class ProgressiveAnalysisInstrumentedTest {
             fail("Out-of-range segment index must be rejected")
         } catch (_: IllegalArgumentException) { }
     }
+    @Test fun incompleteSourceNeverReturnsPartialHighlights() {
+        val dir = directory()
+        try {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val session = ProgressiveAnalysisSession(context, "incomplete-source", dir)
+            try {
+                kotlinx.coroutines.runBlocking {
+                    session.analyze(FinalizedLocalSegmentSource(emptyList()), 120_000L)
+                }
+                fail("An incomplete source must not return partial highlight results")
+            } catch (expected: IllegalStateException) {
+                assertTrue(expected.message.orEmpty().contains("incomplete"))
+            }
+            assertTrue(session.completedSegments().isEmpty())
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun restoredProcessedSegmentsRequireDurableSignals() {
+        val dir = directory()
+        try {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val fingerprint = "missing-snapshot"
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+                .digest(fingerprint.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            val checkpoint = ProgressiveSegmentCheckpoint(
+                File(dir, "progressive-checkpoint-$digest.json"), fingerprint
+            ).load()
+            checkpoint.markFinalized(0)
+            checkpoint.markProcessed(0)
+            val session = ProgressiveAnalysisSession(context, fingerprint, dir)
+            try {
+                kotlinx.coroutines.runBlocking {
+                    session.analyze(FinalizedLocalSegmentSource(emptyList()), 60_000L)
+                }
+                fail("A processed checkpoint without its snapshot must fail")
+            } catch (expected: IllegalArgumentException) {
+                assertTrue(expected.message.orEmpty().contains("Missing signal snapshot"))
+            }
+        } finally { dir.deleteRecursively() }
+    }
+
 }
