@@ -10,6 +10,22 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class TranscriptCheckpointInstrumentedTest {
+    @Test
+    fun alignedWordsSurviveCheckpointReload() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = File.createTempFile("word-checkpoint-", ".json", context.cacheDir)
+        try {
+            val speech = TranscriptSegment(10L, 900L, "hello world", listOf(
+                TimedWord(20L, 380L, "hello"), TimedWord(400L, 890L, "world")
+            ))
+            TranscriptCheckpoint(file, "word-timing-test").save(0, listOf(speech))
+            val restored = TranscriptCheckpoint(file, "word-timing-test").load()
+            assertEquals(listOf(speech), restored.segments())
+        } finally {
+            file.delete()
+        }
+    }
+
     @Test fun completedChunksSurviveReopenAndEmptyChunksCountAsComplete() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val file = File(context.cacheDir, "checkpoint-test-${System.nanoTime()}.json")

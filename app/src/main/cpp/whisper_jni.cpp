@@ -1,4 +1,6 @@
 #include <jni.h>
+#include <algorithm>
+#include <cctype>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -8,6 +10,47 @@ namespace {
 std::mutex g_whisper_mutex;
 whisper_context *g_whisper_context = nullptr;
 std::string g_whisper_model_path;
+
+std::string timed_row(char kind, int64_t start_ms, int64_t end_ms, const std::string &text) {
+    return std::string(1, kind) + "\t" + std::to_string(start_ms) + "\t" +
+           std::to_string(end_ms) + "\t" + text;
+}
+
+void append_word_rows(std::vector<std::string> &rows, int index, int64_t segment_start, int64_t segment_end) {
+    std::string word;
+    int64_t start = -1;
+    int64_t end = -1;
+    const auto flush = [&]() {
+        if (!word.empty() && start >= segment_start && end <= segment_end && end > start) {
+            rows.push_back(timed_row('W', start, end, word));
+        }
+        word.clear();
+        start = -1;
+        end = -1;
+    };
+    for (int j = 0; j < whisper_full_n_tokens(g_whisper_context, index); ++j) {
+        const auto token = whisper_full_get_token_data(g_whisper_context, index, j);
+        if (token.id >= whisper_token_eot(g_whisper_context)) continue;
+        const char *piece = whisper_full_get_token_text(g_whisper_context, index, j);
+        if (piece == nullptr || *piece == '\0') continue;
+        if (std::isspace(static_cast<unsigned char>(*piece))) {
+            flush();
+            while (std::isspace(static_cast<unsigned char>(*piece))) ++piece;
+        }
+        if (*piece == '\0') continue;
+        // Concatenate UTF-8 token bytes first. A token can contain part of a character.
+        word += piece;
+        if (token.t0 >= 0 && token.t1 > token.t0) {
+            const auto token_start = std::max(segment_start, token.t0 * 10);
+            const auto token_end = std::min(segment_end, token.t1 * 10);
+            if (token_end > token_start) {
+                if (start < 0) start = token_start;
+                end = std::max(end, token_end);
+            }
+        }
+    }
+    flush();
+}
 }
 
 extern "C"
@@ -78,6 +121,7 @@ Java_com_clipforge_app_WhisperEngine_transcribe(
     params.n_threads = thread_count > 0 ? thread_count : 2;
     params.no_context = true;
     params.single_segment = false;
+    params.token_timestamps = true;
 
     const int result = whisper_full(g_whisper_context, params, samples, sample_count);
     env->ReleaseFloatArrayElements(audio_data, samples, JNI_ABORT);
@@ -85,29 +129,38 @@ Java_com_clipforge_app_WhisperEngine_transcribe(
 
     if (result != 0) return nullptr;
 
+    std::vector<std::string> rows;
     const int count = whisper_full_n_segments(g_whisper_context);
-    jclass string_class = env->FindClass("java/lang/String");
-    if (string_class == nullptr) return nullptr;
-    jobjectArray output = env->NewObjectArray(count, string_class, nullptr);
-    if (output == nullptr) {
-        env->DeleteLocalRef(string_class);
-        return nullptr;
-    }
-
     for (int i = 0; i < count; ++i) {
         const int64_t start_ms = whisper_full_get_segment_t0(g_whisper_context, i) * 10;
         const int64_t end_ms = whisper_full_get_segment_t1(g_whisper_context, i) * 10;
         const char *segment_text = whisper_full_get_segment_text(g_whisper_context, i);
-        std::string row = std::to_string(start_ms) + "\t" +
-                          std::to_string(end_ms) + "\t" +
-                          (segment_text == nullptr ? "" : segment_text);
-        jstring item = env->NewStringUTF(row.c_str());
-        if (item == nullptr) break;
-        env->SetObjectArrayElement(output, i, item);
-        env->DeleteLocalRef(item);
-        if (env->ExceptionCheck()) break;
+        rows.push_back(timed_row('S', start_ms, end_ms, segment_text == nullptr ? "" : segment_text));
+        append_word_rows(rows, i, start_ms, end_ms);
+    }
+    jclass string_class = env->FindClass("java/lang/String");
+    if (string_class == nullptr) return nullptr;
+    jmethodID string_constructor = env->GetMethodID(string_class, "<init>", "([BLjava/lang/String;)V");
+    if (string_constructor == nullptr) return nullptr;
+    jstring utf8 = env->NewStringUTF("UTF-8");
+    if (utf8 == nullptr) return nullptr;
+    jobjectArray output = env->NewObjectArray(static_cast<jsize>(rows.size()), string_class, nullptr);
+    if (output == nullptr) return nullptr;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const auto size = static_cast<jsize>(rows[i].size());
+        jbyteArray bytes = env->NewByteArray(size);
+        if (bytes == nullptr) return nullptr;
+        env->SetByteArrayRegion(bytes, 0, size, reinterpret_cast<const jbyte *>(rows[i].data()));
+        if (env->ExceptionCheck()) return nullptr;
+        const auto row = env->NewObject(string_class, string_constructor, bytes, utf8);
+        env->DeleteLocalRef(bytes);
+        if (row == nullptr) return nullptr;
+        env->SetObjectArrayElement(output, static_cast<jsize>(i), row);
+        env->DeleteLocalRef(row);
+        if (env->ExceptionCheck()) return nullptr;
     }
 
+    env->DeleteLocalRef(utf8);
     env->DeleteLocalRef(string_class);
     return output;
 }

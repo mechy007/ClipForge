@@ -46,10 +46,7 @@ internal object ProgressiveOfflineTranscription {
             }
             val transcript = result.segments.mapNotNull { item ->
                 val end = endInsideSegment(item.startMs, item.endMs)
-                if (end <= item.startMs) null else item.copy(
-                    startMs = Math.addExact(item.startMs, span.startMs),
-                    endMs = Math.addExact(end, span.startMs)
-                )
+                if (end <= item.startMs) null else item.moveToSource(span.startMs, end)
             }
             val energy = result.audioEnergy.mapNotNull { item ->
                 val end = endInsideSegment(item.startMs, item.endMs)

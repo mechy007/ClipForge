@@ -22,7 +22,8 @@ internal object StreamerGameplayRenderer {
         endMs: Long,
         facecam: StreamRegion,
         captions: List<CaptionCue> = emptyList(),
-        captionPreset: CaptionPreset = CaptionPreset.CLEAN
+        captionPreset: CaptionPreset = CaptionPreset.CLEAN,
+        words: List<TimedWord> = emptyList()
     ) = withContext(Dispatchers.IO) {
         require(startMs >= 0L && endMs > startMs)
         val existing = source.takeIf { it.scheme == "file" }?.path?.let(::File)
@@ -61,7 +62,9 @@ internal object StreamerGameplayRenderer {
             if (uncaptioned != null) {
                 // Wait for the callback before deleting files the encoder may still be using.
                 suspendCoroutine<Unit> { continuation ->
-                    CaptionBurnIn.render(context, raw, destination, captions, captionPreset) { ok, message ->
+                    CaptionBurnIn.render(
+                        context, raw, destination, captions, captionPreset, words, endMs - startMs
+                    ) { ok, message ->
                         continuation.resumeWith(if (ok) Result.success(Unit) else Result.failure(IllegalStateException(message)))
                     }
                 }

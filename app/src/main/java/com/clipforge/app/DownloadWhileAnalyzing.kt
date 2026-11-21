@@ -98,7 +98,7 @@ internal object DownloadWhileAnalyzing {
         withContext(Dispatchers.IO) { sections.deleteRecursively() }
         val transcript = signals.transcript.mapNotNull { segment ->
             val end = minOf(segment.endMs, playableDuration)
-            if (segment.startMs < end) segment.copy(endMs = end) else null
+            if (segment.startMs < end) segment.moveToSource(0L, end) else null
         }
         return ImportedAnalysis(source, playableDuration, clips, transcript)
     }

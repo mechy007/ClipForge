@@ -50,6 +50,14 @@ object ClipExporter {
         }
     }
 
+    private data class Captions(
+        val cues: List<CaptionCue>,
+        val preset: CaptionPreset,
+        val words: List<TimedWord>,
+        val durationMs: Long,
+        val aspect: Float
+    )
+
     private fun exportFaceAware(
         context: Context,
         source: Uri,
@@ -57,8 +65,7 @@ object ClipExporter {
         startMs: Long,
         endMs: Long,
         path: List<CropFocus>,
-        captionCues: List<CaptionCue>,
-        captionPreset: CaptionPreset,
+        captions: Captions,
         onStatus: (String) -> Unit,
         onFinished: (Boolean, String) -> Unit,
         verify: (File) -> Unit
@@ -95,7 +102,7 @@ object ClipExporter {
                             onFinished(false, "Face-aware export failed: $detail")
                         }
                     } else {
-                        finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished, verify)
+                        finishRendered(context, output, destination, captions, onStatus, onFinished, verify)
                     }
                 }
             } catch (error: Exception) {
@@ -112,18 +119,20 @@ object ClipExporter {
         context: Context,
         output: File,
         destination: Uri,
-        captionCues: List<CaptionCue>,
-        captionPreset: CaptionPreset,
+        captions: Captions,
         onStatus: (String) -> Unit,
         onFinished: (Boolean, String) -> Unit,
         verify: (File) -> Unit
     ) {
-        if (captionCues.isEmpty()) {
+        if (captions.cues.isEmpty()) {
             copyToDestination(context, output, destination, onFinished, verify = verify)
         } else {
             mainHandler.post { onStatus("Burning captions into the video…") }
             val captioned = File(context.cacheDir, "clipforge_captioned_${System.nanoTime()}.mp4")
-            CaptionBurnIn.render(context, output, captioned, captionCues, captionPreset) { success, message ->
+            CaptionBurnIn.render(
+                context, output, captioned, captions.cues, captions.preset,
+                captions.words, captions.durationMs, captions.aspect
+            ) { success, message ->
                 if (!success) {
                     output.delete()
                     captioned.delete()
@@ -148,6 +157,7 @@ object ClipExporter {
         splitFacecamRegion: StreamRegion? = null,
         captionCues: List<CaptionCue> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
+        captionWords: List<TimedWord> = emptyList(),
         onStatus: (String) -> Unit,
         onFinished: (Boolean, String) -> Unit
     ) {
@@ -167,7 +177,7 @@ object ClipExporter {
                 try {
                     runBlocking {
                         StreamerGameplayRenderer.render(
-                            context, source, output, startMs, endMs, splitFacecamRegion, captionCues, captionPreset
+                            context, source, output, startMs, endMs, splitFacecamRegion, captionCues, captionPreset, captionWords
                         )
                     }
                     copyToDestination(context, output, destination, onFinished)
@@ -180,6 +190,7 @@ object ClipExporter {
         }
 
         val normalizedAspect = aspectRatio.coerceIn(0.5f, 2.0f)
+        val captions = Captions(captionCues, captionPreset, captionWords, endMs - startMs, normalizedAspect)
         val verify: (File) -> Unit = { rendered ->
             EncodedClipVerifier.verify(
                 context, Uri.fromFile(rendered), endMs - startMs, normalizedAspect,
@@ -189,7 +200,7 @@ object ClipExporter {
         if (faceTrackingPath.isNotEmpty()) {
             exportFaceAware(
                 context, source, destination, startMs, endMs, faceTrackingPath,
-                captionCues, captionPreset, onStatus, onFinished, verify
+                captions, onStatus, onFinished, verify
             )
             return
         }
@@ -215,7 +226,7 @@ object ClipExporter {
         val transformer = Transformer.Builder(context)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished, verify)
+                    finishRendered(context, output, destination, captions, onStatus, onFinished, verify)
                 }
 
                 override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {

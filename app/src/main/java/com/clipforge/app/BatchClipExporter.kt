@@ -82,6 +82,7 @@ object BatchClipExporter {
                             splitFacecamRegion = splitFacecamRegion,
                             captionCues = CaptionTrack.fromTranscript(transcript, clip.startMs, clip.endMs),
                             captionPreset = captionPreset,
+                            captionWords = if (captionPreset == CaptionPreset.KARAOKE) CaptionTrack.alignedWords(transcript, clip.startMs, clip.endMs) else emptyList(),
                             onStatus = { },
                             onFinished = { success, message ->
                                 if (continuation.isActive) continuation.resume(success to message)

@@ -56,6 +56,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 private val Ink = ClipForgePalette.Background
 private val Panel = ClipForgePalette.Surface
@@ -314,6 +317,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 splitFacecamRegion = splitRegion,
                 captionCues = cues,
                 captionPreset = runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
+                captionWords = if (burnCaptions && captionPreset == CaptionPreset.KARAOKE.name) {
+                    CaptionTrack.alignedWords(transcriptSegments, clip.startMs, clip.endMs)
+                } else emptyList(),
                 onStatus = { exportMessage = it },
                 onFinished = { _, result -> exportMessage = result; pending = null })
         } else { pending = null; if (dest == null) exportMessage = "Export cancelled." }
@@ -1251,29 +1257,27 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     "${time(clip.startMs)} – ${time(clip.endMs)} · ${((clip.endMs - clip.startMs) / 1000L)} sec",
                                     color = Muted, fontSize = 11.sp
                                 )
-                                if (splitSelected) {
-                                    val region = splitRegion
-                                    if (region == null) {
-                                        Text("Set the facecam region in Studio to preview this layout.")
-                                    } else {
-                                        SplitClipPreview(
-                                            source, clip, region,
-                                            if (burnCaptions) CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs) else emptyList(),
-                                            CaptionPreset.valueOf(captionPreset)
-                                        )
+                                val cues = if (burnCaptions) {
+                                    CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs)
+                                } else emptyList()
+                                val words = if (burnCaptions && captionPreset == CaptionPreset.KARAOKE.name) {
+                                    CaptionTrack.alignedWords(transcriptSegments, clip.startMs, clip.endMs)
+                                } else emptyList()
+                                when {
+                                    splitSelected && splitRegion == null -> Text("Set the facecam region in Studio to preview this layout.")
+                                    splitSelected || faceTrackingPath.isNotEmpty() || cues.isNotEmpty() -> {
+                                        RenderedClipPreview(source, clip, exportAspectRatio, faceTrackingPath, splitRegion,
+                                            cues, CaptionPreset.valueOf(captionPreset), words)
                                     }
-                                } else {
-                                    var clipPreviewError by remember(source, clip) { mutableStateOf<String?>(null) }
-                                    VideoPreview(
-                                        uri = source,
-                                        onDuration = { },
-                                        onError = { clipPreviewError = it },
-                                        retryKey = previewRetryKey,
-                                        aspectRatio = exportAspectRatio,
-                                        startAtMs = clip.startMs,
-                                        endAtMs = clip.endMs
-                                    )
-                                    clipPreviewError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                                    else -> {
+                                        var clipPreviewError by remember(source, clip) { mutableStateOf<String?>(null) }
+                                        VideoPreview(
+                                            uri = source, onDuration = { }, onError = { clipPreviewError = it },
+                                            retryKey = previewRetryKey, aspectRatio = exportAspectRatio,
+                                            startAtMs = clip.startMs, endAtMs = clip.endMs
+                                        )
+                                        clipPreviewError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                                    }
                                 }
                                 if (clip.hook.isNotBlank()) Text(clip.hook, color = Muted, fontSize = 11.sp, maxLines = 4)
                             }
@@ -1302,12 +1306,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     reviewed = reviewed.entries.associate { (candidate, decision) ->
                                         (if (candidate == clip) trimmed else candidate) to decision
                                     }
-                                    save(trimmed)
                                     editing = null
                                 },
                                 enabled = editStart >= 0L && editEnd > editStart && editEnd <= duration,
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Save trim & export") }
+                            ) { Text("Save trim") }
                         }
                     }
                 }
@@ -1370,29 +1373,45 @@ private fun FacecamRegionControls(region: StreamRegion, onChange: (StreamRegion)
 }
 
 @Composable
-private fun SplitClipPreview(
+private fun RenderedClipPreview(
     source: Uri,
     clip: ClipCandidate,
-    region: StreamRegion,
+    aspect: Float,
+    tracking: List<CropFocus>,
+    region: StreamRegion?,
     captions: List<CaptionCue>,
-    preset: CaptionPreset
+    preset: CaptionPreset,
+    words: List<TimedWord>
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var retry by remember { mutableIntStateOf(0) }
-    var preview by remember(source, clip, region, captions, preset, retry) { mutableStateOf<Uri?>(null) }
-    var error by remember(source, clip, region, captions, preset, retry) { mutableStateOf<String?>(null) }
-    LaunchedEffect(source, clip, region, captions, preset, retry) {
+    var preview by remember(source, clip, aspect, tracking, region, captions, preset, words, retry) { mutableStateOf<Uri?>(null) }
+    var error by remember(source, clip, aspect, tracking, region, captions, preset, words, retry) { mutableStateOf<String?>(null) }
+    LaunchedEffect(source, clip, aspect, tracking, region, captions, preset, words, retry) {
         var file: File? = null
         try {
-            val output = File.createTempFile("split-preview-", ".mp4", context.cacheDir)
+            val output = File.createTempFile("clip-preview-", ".mp4", context.cacheDir)
             file = output
-            StreamerGameplayRenderer.render(context, source, output, clip.startMs, clip.endMs, region, captions, preset)
-            preview = Uri.fromFile(output)
+            val uri = Uri.fromFile(output)
+            // Wait until the encoder no longer owns the file before deleting a dismissed preview.
+            suspendCoroutine<Unit> { continuation ->
+                ClipExporter.export(
+                    context, source, uri, clip.startMs, clip.endMs,
+                    aspectRatio = aspect, faceTrackingPath = tracking, splitFacecamRegion = region,
+                    captionCues = captions, captionPreset = preset, captionWords = words,
+                    onStatus = {},
+                    onFinished = { success, message ->
+                        if (success) continuation.resume(Unit)
+                        else continuation.resumeWithException(IllegalStateException(message))
+                    }
+                )
+            }
+            preview = uri
             awaitCancellation()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            error = failure.localizedMessage ?: "Could not render the split-screen preview."
+            error = failure.localizedMessage ?: "Could not render the clip preview."
         } finally {
             file?.delete()
         }
@@ -1403,10 +1422,10 @@ private fun SplitClipPreview(
             Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
             OutlinedButton(onClick = { retry++ }) { Text("Retry preview") }
         }
-        uri != null -> VideoPreview(uri, onDuration = {}, onError = { error = it }, retryKey = retry)
+        uri != null -> VideoPreview(uri, onDuration = {}, onError = { error = it }, retryKey = retry, aspectRatio = aspect)
         else -> {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text("Rendering split-screen preview…", color = Muted, fontSize = 11.sp)
+            Text("Rendering clip preview…", color = Muted, fontSize = 11.sp)
         }
     }
 }

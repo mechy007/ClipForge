@@ -1,6 +1,6 @@
 # ClipForge
 
-ClipForge is an Android-first, local-first video clipping app. It imports local videos, previews and trims them, transcribes speech offline with whisper.cpp, ranks transcript-based highlight candidates, and exports selected moments as MP4 clips.
+ClipForge is an Android-first, local-first video clipping app. It imports local videos, previews and trims them, transcribes speech offline with whisper.cpp, ranks speech and visual highlight candidates, and exports selected moments as MP4 clips.
 
 ## Current capabilities
 - Import and preview a local video using Android's document picker, with a responsive preview canvas, playback controls, seeking, and provider-supplied display names.
@@ -16,7 +16,9 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Rank and de-duplicate overlapping candidates, show a short transcript preview, and let the user adjust clip start/end points.
 - Select individual detected highlights or all highlights, then export them individually or sequentially as a batch into a chosen Android folder. Each batch output is verified before it is marked complete; interrupted batches can resume remaining clips without re-exporting verified clips while the app process remains alive.
 - Export selected clips as vertical 9:16 Shorts, landscape 16:9 YouTube videos, or square 1:1 MP4s using Media3 Transformer. The chosen format applies to both single and batch exports, and the Studio preview uses the same crop-to-fill behavior.
-- Export timestamp-aligned SRT subtitle sidecars for individual clips from the local transcript.
+- Choose Standard or Streamer + Gameplay for 9:16 output. ClipForge proposes a facecam region from sampled frames, lets you set and adjust it, and uses the same 1080 × 1920 renderer for review and export.
+- Create captioned MP4s with Clean, Bold, Boxed or Karaoke styling. Karaoke uses Whisper token timings when they cover the recorded speech and uses phrase captions when alignment is unavailable. SRT subtitle sidecars are also available.
+- For supported recordings, **Analyze during download** overlaps offline analysis with downloading complete sections. ClipForge checks the timeline before joining those sections for review and falls back to downloading the complete recording if the sections cannot be joined. Live and unseekable sources can require the standard import path.
 - Export the complete timestamped transcript as a readable UTF-8 TXT file for notes, editing workflows and repurposing.
 - Monitor public YouTube Live chat through the official Data API, detect activity spikes, and persist live sessions and timestamp markers in SQLite so they survive screen and app restarts.
 - When capture is started from an existing monitored session, save the local recording start time and automatically convert broadcast-relative chat markers to the recording timeline. For automatic alignment, start YouTube Live chat monitoring first, then start the camera or screen capture.
@@ -42,11 +44,10 @@ The Whisper model is fetched and SHA-256-verified during the APK build, packaged
 ## Current limitations
 - The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed. Batch export progress survives Activity recreation but is not yet recoverable after Android terminates the app process.
 - In Studio, paste a recorded YouTube video URL, select a maximum resolution, and choose **Download and clip**. ClipForge saves the source in app storage and opens the trim editor. Direct HTTPS video files are also supported. The Live tab monitors live chat and records timestamp markers. Creator Live Studio captures a new camera/microphone feed that the user owns. The camera studio requires a manually supplied RTMPS server URL and stream key and runs while its activity stays open. Screen/game capture requires Android 10+, user-approved MediaProjection, Android audio permission for playback capture, notification permission, and a manually supplied RTMPS server URL/key. It captures supported internal game/media audio, not microphone commentary. Internal audio depends on the source app allowing playback capture; protected apps may block it. Set screen orientation before starting. Neither studio creates broadcasts through YouTube OAuth.
-- Durable background processing, animated/burned-in caption rendering, and face-aware reframing are not yet complete. SRT sidecar export is available separately.
+- Background analysis and export recovery after Android process termination, plus alignment quality across languages, still need validation.
 
 ## Next milestones
-- Animated/burned-in caption styles and subtitle styling.
-- Subject-aware reframing and face tracking.
+- Validate captions, face detection and face-aware framing on representative recordings.
 - Durable batch-export recovery after process termination and explicit cancellation controls.
 - Durable background YouTube Live chat monitoring and multi-recording/session selection. Session persistence, recording-start alignment and foreground screen capture are implemented.
 - Device performance, thermal and battery profiling.

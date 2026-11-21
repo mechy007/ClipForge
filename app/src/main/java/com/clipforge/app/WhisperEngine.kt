@@ -7,8 +7,19 @@ import kotlinx.coroutines.withContext
 data class TranscriptSegment(
     val startMs: Long,
     val endMs: Long,
-    val text: String
-)
+    val text: String,
+    val words: List<TimedWord> = emptyList()
+) {
+    internal fun moveToSource(offsetMs: Long, latestMs: Long = Long.MAX_VALUE): TranscriptSegment = copy(
+        startMs = startMs + offsetMs,
+        endMs = minOf(endMs, latestMs) + offsetMs,
+        words = words.mapNotNull { word ->
+            val end = minOf(word.endMs, latestMs)
+            if (end <= word.startMs) null
+            else word.copy(startMs = word.startMs + offsetMs, endMs = end + offsetMs)
+        }
+    )
+}
 
 /**
  * Thin Kotlin boundary around the pinned whisper.cpp JNI runtime.
@@ -53,14 +64,43 @@ object WhisperEngine {
         val rows = transcribe(audioSamples, threads, language)
             ?: error("Whisper could not transcribe this audio.")
 
-        rows.mapNotNull { row ->
-            val fields = row.split('\t', limit = 3)
-            if (fields.size != 3) return@mapNotNull null
-            TranscriptSegment(
-                startMs = fields[0].toLongOrNull() ?: return@mapNotNull null,
-                endMs = fields[1].toLongOrNull() ?: return@mapNotNull null,
-                text = fields[2].trim()
-            )
-        }.filter { it.endMs > it.startMs && it.text.isNotBlank() }
+        parseWhisperRows(rows)
     }
+}
+
+internal fun parseWhisperRows(rows: Array<String>): List<TranscriptSegment> {
+    val segments = mutableListOf<TranscriptSegment>()
+    var segment: TranscriptSegment? = null
+    val words = mutableListOf<TimedWord>()
+    val whitespace = Regex("\\s+")
+    fun flush() {
+        segment?.let { item ->
+            val recognizedText = words.joinToString(" ") { it.word }.replace(whitespace, " ").trim()
+            val complete = recognizedText == item.text.replace(whitespace, " ").trim() &&
+                words.zipWithNext().all { (a, b) -> a.endMs <= b.startMs }
+            segments += item.copy(words = if (complete) words.toList() else emptyList())
+        }
+        words.clear()
+    }
+    for (row in rows) {
+        val fields = row.split('\t', limit = 4)
+        if (fields.size != 4) continue
+        val start = fields[1].toLongOrNull() ?: continue
+        val end = fields[2].toLongOrNull() ?: continue
+        val text = fields[3].trim()
+        when (fields[0]) {
+            "S" -> {
+                flush()
+                segment = if (start >= 0 && end > start && text.isNotBlank()) TranscriptSegment(start, end, text) else null
+            }
+            "W" -> {
+                val parent = segment ?: continue
+                if (start >= parent.startMs && end <= parent.endMs && end > start &&
+                    text.isNotBlank() && text.none { it.isWhitespace() }
+                ) words += TimedWord(start, end, text)
+            }
+        }
+    }
+    flush()
+    return segments
 }

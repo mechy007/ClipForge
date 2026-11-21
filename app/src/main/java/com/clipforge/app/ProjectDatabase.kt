@@ -11,7 +11,7 @@ data class SavedLiveSession(val id: Long, val videoId: String, val title: String
 data class SavedLiveMarker(val id: Long, val sessionId: Long, val startMs: Long, val messageCount: Int, val baselineMedian: Double, val reason: String)
 
 /** Local SQLite persistence. Media files remain outside the database. */
-class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationContext, "clipforge_projects.db", null, 7) {
+class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationContext, "clipforge_projects.db", null, 8) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, source_uri TEXT NOT NULL, duration_ms INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'draft', updated_at INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE highlights (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, title TEXT NOT NULL, transcript TEXT NOT NULL, score INTEGER NOT NULL, exported_uri TEXT, reason TEXT NOT NULL DEFAULT '', review_status TEXT NOT NULL DEFAULT 'PENDING')")
@@ -36,6 +36,9 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
         if (oldVersion < 7) {
             db.execSQL("ALTER TABLE highlights ADD COLUMN review_status TEXT NOT NULL DEFAULT 'PENDING'")
         }
+        if (oldVersion in 2..7) {
+            db.execSQL("ALTER TABLE transcript_segments ADD COLUMN words TEXT NOT NULL DEFAULT '[]'")
+        }
     }
 
     private fun createLiveTables(db: SQLiteDatabase) {
@@ -45,7 +48,7 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
     }
 
     private fun createTranscriptTable(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE IF NOT EXISTS transcript_segments (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, text TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS transcript_segments (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, text TEXT NOT NULL, words TEXT NOT NULL DEFAULT '[]')")
         db.execSQL("CREATE INDEX IF NOT EXISTS transcript_project_time_idx ON transcript_segments(project_id, start_ms)")
     }
 
@@ -102,6 +105,7 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
                     put("start_ms", segment.startMs)
                     put("end_ms", segment.endMs)
                     put("text", segment.text)
+                    put("words", segment.words.toWordJson().toString())
                 })
             }
             db.setTransactionSuccessful()
@@ -113,11 +117,14 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
     fun listTranscript(projectId: Long): List<TranscriptSegment> {
         val rows = mutableListOf<TranscriptSegment>()
         readableDatabase.query(
-            "transcript_segments", arrayOf("start_ms", "end_ms", "text"),
+            "transcript_segments", arrayOf("start_ms", "end_ms", "text", "words"),
             "project_id=?", arrayOf(projectId.toString()), null, null, "start_ms ASC"
         ).use { cursor ->
             while (cursor.moveToNext()) {
-                rows += TranscriptSegment(cursor.getLong(0), cursor.getLong(1), cursor.getString(2))
+                val start = cursor.getLong(0)
+                val end = cursor.getLong(1)
+                val words = org.json.JSONArray(cursor.getString(3)).readWordTimings(start, end)
+                rows += TranscriptSegment(start, end, cursor.getString(2), words)
             }
         }
         return rows
