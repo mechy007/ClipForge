@@ -28,17 +28,19 @@ internal object DownloadWhileAnalyzing {
         onStatus: (String) -> Unit = {}
     ): List<ClipCandidate> {
         val id = YouTubeLiveApiClient.parseVideoId(url)
+        val fingerprint = "youtube:$id:$height:$durationMs"
+        val scopedDirectory = File(stateDirectory, "youtube-$id-$height-$durationMs")
         return run(
             context = context,
-            sourceFingerprint = "youtube:$id:$height:$durationMs",
-            stateDirectory = stateDirectory,
+            sourceFingerprint = fingerprint,
+            stateDirectory = scopedDirectory,
             durationMs = durationMs,
             language = language,
             onStatus = onStatus
         ) { publish ->
             YouTubeSectionDownloader.download(
                 context, url, height, durationMs,
-                File(stateDirectory, "downloaded-sections"), publish
+                File(scopedDirectory, "downloaded-sections"), publish
             )
         }
     }
