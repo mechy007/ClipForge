@@ -321,7 +321,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     LaunchedEffect(context) {
         androidx.work.WorkManager.getInstance(context)
             .getWorkInfosForUniqueWorkFlow("clipforge-offline-import").collect { jobs ->
-                val info = jobs.lastOrNull() ?: return@collect
+                // Unique-work history has no guaranteed newest-first ordering.
+                val preferences = context.getSharedPreferences("clipforge_imports", Context.MODE_PRIVATE)
+                val requestedId = preferences.getString("current_work_id", null)
+                val info = jobs.firstOrNull { it.id.toString() == requestedId }
+                    ?: return@collect
                 when (info.state) {
                     androidx.work.WorkInfo.State.RUNNING, androidx.work.WorkInfo.State.ENQUEUED,
                     androidx.work.WorkInfo.State.BLOCKED -> {
@@ -368,6 +372,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 .setInputData(androidx.work.workDataOf(BackgroundVideoImportWorker.SOURCE_URI to uri.toString()))
                 .build()
             val manager = androidx.work.WorkManager.getInstance(context)
+            // Save the exact request before the observer can receive its state.
+            context.getSharedPreferences("clipforge_imports", Context.MODE_PRIVATE)
+                .edit().putString("current_work_id", request.id.toString()).commit()
             manager.enqueueUniqueWork("clipforge-offline-import", androidx.work.ExistingWorkPolicy.REPLACE, request)
 
         }
