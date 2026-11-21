@@ -70,3 +70,19 @@ object VisualUnderstandingEngine {
             VisualUnderstandingResult(events)
         }
 }
+
+/** Conservative visual boost for transcript-ranked clips; does not fabricate highlights. */
+internal object VisualHighlightReranker {
+    fun rerank(clips: List<ClipCandidate>, signals: VisualUnderstandingResult): List<ClipCandidate> =
+        clips.map { clip ->
+            val samples = signals.activity.filter { it.timeMs >= clip.startMs && it.timeMs < clip.endMs }
+            if (samples.isEmpty()) clip else {
+                val meanMotion = samples.map { it.motion.coerceIn(0f, 1f) }.average().toFloat()
+                val bonus = (meanMotion * 25f).toInt().coerceIn(0, 8)
+                clip.copy(
+                    score = (clip.score + bonus).coerceAtMost(100),
+                    reason = if (bonus > 0) clip.reason + " Visual activity: +$bonus." else clip.reason
+                )
+            }
+        }.sortedByDescending { it.score }
+}
