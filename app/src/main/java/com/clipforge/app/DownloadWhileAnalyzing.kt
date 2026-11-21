@@ -1,0 +1,64 @@
+package com.clipforge.app
+
+import android.content.Context
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import java.io.File
+
+/**
+ * Runs offline analysis concurrently with an authorized segmented download.
+ *
+ * The producer MUST publish only fully written, independently decodable media
+ * files, never a growing .part file. Its completion closes the channel; a failed
+ * download propagates to analysis instead of producing partial final highlights.
+ * The session retains durable per-segment checkpoints for a subsequent retry.
+ */
+internal object DownloadWhileAnalyzing {
+    suspend fun run(
+        context: Context,
+        sourceFingerprint: String,
+        stateDirectory: File,
+        durationMs: Long,
+        language: String? = null,
+        onStatus: (String) -> Unit = {},
+        download: suspend (publish: suspend (FinalizedMediaSegment) -> Unit) -> Unit
+    ): List<ClipCandidate> = coroutineScope {
+        require(durationMs > 0L)
+        val planned = ProgressiveSegmentPlanner.plan(durationMs)
+        val session = ProgressiveAnalysisSession(context, sourceFingerprint, stateDirectory)
+        val processed = session.completedSegments()
+        val queue = Channel<FinalizedMediaSegment>(capacity = 2)
+        val producer = launch {
+            try {
+                download { segment ->
+                    require(planned.getOrNull(segment.segment.index) == segment.segment) {
+                        "Downloaded segment does not match the source timeline"
+                    }
+                    check(segment.file.isFile && segment.file.length() > 0L) {
+                        "Segment must be finalized before publishing"
+                    }
+                    if (segment.segment.index !in processed) queue.send(segment)
+                }
+                queue.close()
+            } catch (error: Throwable) {
+                queue.close(error)
+                throw error
+            }
+        }
+        try {
+            val source = ProgressiveMediaSource { emit ->
+                for (segment in queue) emit(segment)
+            }
+            val clips = session.analyze(source, durationMs, language, onStatus)
+            producer.join()
+            clips
+        } catch (error: Throwable) {
+            producer.cancel(CancellationException("Progressive analysis stopped", error))
+            throw error
+        } finally {
+            queue.cancel()
+        }
+    }
+}
