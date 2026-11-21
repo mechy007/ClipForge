@@ -858,9 +858,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             })
                             val transcript = analysis.segments
                             transcriptSegments = transcript
-                            message = "Detecting scene changes…"
-                            val sceneCuts = SceneChangeAnalyzer.analyze(context, src, duration)
-                            message = "Tracking faces for automatic vertical framing…"
+                            message = "Analyzing video motion and scene changes offline…"
+                            val visualSignals = VisualUnderstandingEngine.analyze(context, src, duration)
+                            val sceneCuts = visualSignals.sceneCuts
+                            message = "Tracking faces automatically for vertical framing…"
                             faceTrackingPath = FaceTrackingAnalyzer.analyze(context, src, 0L, duration, exportAspectRatio)
                             faceTrackingMessage = if (faceTrackingPath.isEmpty()) {
                                 "No faces detected. Exports will use a centered crop."
