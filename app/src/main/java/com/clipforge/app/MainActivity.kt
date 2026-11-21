@@ -330,7 +330,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                     androidx.work.WorkInfo.State.SUCCEEDED -> {
                         val result = info.outputData.getString(BackgroundVideoImportWorker.RESULT_URI)
-                        if (result != null && video?.toString() != result) {
+                        // A completed unique WorkManager job remains queryable after
+                        // restart. Consume its result only once, otherwise reopening
+                        // Studio can unexpectedly replace a newer manually chosen video.
+                        val consumed = context.getSharedPreferences("clipforge_imports", Context.MODE_PRIVATE)
+                        if (result != null && consumed.getString("consumed_work_id", null) != info.id.toString()) {
+                            consumed.edit().putString("consumed_work_id", info.id.toString()).apply()
                             video = Uri.parse(result)
                             duration = 0L
                             clips = emptyList()
