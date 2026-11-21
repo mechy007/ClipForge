@@ -176,4 +176,18 @@ class ProgressiveAnalysisInstrumentedTest {
         } finally { dir.deleteRecursively() }
     }
 
+    @Test fun completedSignalsRejectsPartialTimeline() {
+        val dir = directory()
+        try {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val session = ProgressiveAnalysisSession(context, "partial-editor-signals", dir)
+            try {
+                session.completedSignals(120_000L)
+                fail("Incomplete analysis must not supply captions or export signals")
+            } catch (expected: IllegalStateException) {
+                assertTrue(expected.message.orEmpty().contains("incomplete"))
+            }
+        } finally { dir.deleteRecursively() }
+    }
+
 }
