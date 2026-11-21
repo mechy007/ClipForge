@@ -158,6 +158,16 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var exportAspectRatio by rememberSaveable { mutableFloatStateOf(9f / 16f) }
     var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
     var verticalLayoutChoice by rememberSaveable { mutableStateOf<String?>(null) }
+    var facecamCorner by rememberSaveable { mutableStateOf<String?>(null) }
+    val splitRegion = if (exportAspectRatio < 0.8f && verticalLayoutChoice == "split") {
+        when (facecamCorner) {
+            "Top left" -> StreamRegion(0f, 0f, 0.32f, 0.38f)
+            "Top right" -> StreamRegion(0.68f, 0f, 1f, 0.38f)
+            "Bottom left" -> StreamRegion(0f, 0.62f, 0.32f, 1f)
+            "Bottom right" -> StreamRegion(0.68f, 0.62f, 1f, 1f)
+            else -> null
+        }
+    } else null
     var previewRetryKey by remember(video) { mutableIntStateOf(0) }
     var previewError by remember(video) { mutableStateOf<String?>(null) }
     var videoDisplayName by remember(video) { mutableStateOf("") }
@@ -279,6 +289,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             ClipExporter.export(context, src, dest, clip.startMs, clip.endMs,
                 aspectRatio = exportAspectRatio,
                 faceTrackingPath = faceTrackingPath,
+                splitFacecamRegion = splitRegion,
                 captionCues = cues,
                 captionPreset = runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
                 onStatus = { exportMessage = it },
@@ -300,7 +311,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 context, treeUri, source, chosen, exportAspectRatio,
                 if (burnCaptions) transcriptSegments else emptyList(),
                 runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
-                faceTrackingPath = faceTrackingPath
+                faceTrackingPath = faceTrackingPath,
+                splitFacecamRegion = splitRegion
             )
         }
     }
@@ -898,7 +910,17 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         )
                     }
                     if (verticalLayoutChoice == "split") {
-                        Text("Split-screen rendering is in development; selecting it records your preference but export is not available yet.", color = Muted, fontSize = 11.sp)
+                        Text("Choose the source facecam corner. This is an approximate crop; check your output before sharing.", color = Muted, fontSize = 11.sp)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf("Top left", "Top right", "Bottom left", "Bottom right").forEach { corner ->
+                                FilterChip(
+                                    selected = facecamCorner == corner,
+                                    onClick = { facecamCorner = corner },
+                                    label = { Text(corner, fontSize = 9.sp) },
+                                    enabled = !analyzing
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -978,7 +1000,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
                     }
-                }, enabled = ready && !analyzing && duration > 0L && (exportAspectRatio >= 0.8f || verticalLayoutChoice != null), modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                }, enabled = ready && !analyzing && duration > 0L && (exportAspectRatio >= 0.8f || (verticalLayoutChoice != null && (verticalLayoutChoice != "split" || facecamCorner != null))), modifier = Modifier.fillMaxWidth().height(54.dp)) {
                     Icon(Icons.Default.AutoAwesome, null)
                     Text(if (analyzing) "  Analyzing video…" else "  Find my best clips")
                 }
