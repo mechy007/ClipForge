@@ -870,10 +870,26 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                             message = "Ranking speech, silence and scene changes…"
                             val found = withContext(Dispatchers.Default) {
-                                VisualHighlightReranker.rerank(
-                                    HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights),
-                                    visualSignals
-                                )
+                                run {
+                                    val speechRanked = VisualHighlightReranker.rerank(
+                                        HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights),
+                                        visualSignals
+                                    )
+                                    val visualRanked = VisualOnlyHighlightDetector.detect(
+                                        visualSignals, duration, targetClipDurationMs, maxHighlights
+                                    )
+                                    val combined = speechRanked.toMutableList()
+                                    for (candidate in visualRanked) {
+                                        if (combined.size >= maxHighlights) break
+                                        if (combined.none { existing ->
+                                                HighlightDetector.overlapOfShorter(
+                                                    candidate.startMs, candidate.endMs,
+                                                    existing.startMs, existing.endMs
+                                                ) > 0.65
+                                            }) combined += candidate
+                                    }
+                                    combined.sortedByDescending { it.score }.take(maxHighlights)
+                                }
                             }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
@@ -892,7 +908,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             clips = found
                             selectedClips = found.toSet()
                             if (found.isNotEmpty()) activeSection = "Highlights"
-                            message = if (found.isEmpty()) "No clear speech highlights found. Try a video with spoken audio."
+                            message = if (found.isEmpty()) "No clear highlights detected. Try a longer video with visible action."
                                 else "Analysis complete · ${found.size} clips ranked"
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
