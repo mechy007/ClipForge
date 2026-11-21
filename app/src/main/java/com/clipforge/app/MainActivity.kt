@@ -888,7 +888,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                                 ) > 0.65
                                             }) combined += candidate
                                     }
-                                    combined.sortedByDescending { it.score }.take(maxHighlights)
+                                    ReactionSignalFusion.rerank(combined, visualSignals, analysis.audioEnergy).take(maxHighlights)
                                 }
                             }
                             val existingProjectId = activeProjectId
