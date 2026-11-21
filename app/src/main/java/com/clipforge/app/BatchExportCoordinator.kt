@@ -48,7 +48,7 @@ object BatchExportCoordinator {
             previous.folderUri == folder.toString() && previous.aspectRatio == aspectRatio
         // A retry may use a different selection: only count previously exported clips
         // that are still selected, and never count a duplicate more than once.
-        val selectedClips = clips.distinct()
+        val selectedClips = clips.distinctBy { it.startMs to it.endMs }
         if (!sameBatch) verifiedBatchClips.clear()
         val alreadyCompleted = if (sameBatch) verifiedBatchClips.filter { it in selectedClips } else emptyList()
         val remaining = selectedClips.filterNot { it in alreadyCompleted }
