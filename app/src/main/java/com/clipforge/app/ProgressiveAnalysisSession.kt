@@ -25,7 +25,8 @@ internal class ProgressiveAnalysisSession(
         source: ProgressiveMediaSource,
         durationMs: Long,
         language: String? = null,
-        onStatus: (String) -> Unit = {}
+        onStatus: (String) -> Unit = {},
+        onSectionAnalyzed: suspend (FinalizedMediaSegment, ProgressiveTranscriptionSignals) -> Unit = { _, _ -> }
     ): List<ClipCandidate> {
         require(durationMs > 0L)
         val planned = ProgressiveSegmentPlanner.plan(durationMs)
@@ -53,10 +54,11 @@ internal class ProgressiveAnalysisSession(
         }
         ProgressiveOfflineTranscription.run(
             context, validatedSource, checkpoint, language, onStatus
-        ) { signals ->
+        ) { finalized, signals ->
             val expected = planned.getOrNull(signals.segment.index)
             require(expected == signals.segment) { "Source segment differs from planned timeline" }
             ProgressiveSignalIntegration.persist(store, signals)
+            onSectionAnalyzed(finalized, signals)
         }
         val processed = checkpoint.processedIndices()
         check(processed == indices) {

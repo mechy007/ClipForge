@@ -158,6 +158,7 @@ object ClipExporter {
         captionCues: List<CaptionCue> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         captionWords: List<TimedWord> = emptyList(),
+        gameplayRegion: StreamRegion? = null,
         onStatus: (String) -> Unit,
         onFinished: (Boolean, String) -> Unit
     ) {
@@ -177,7 +178,7 @@ object ClipExporter {
                 try {
                     runBlocking {
                         StreamerGameplayRenderer.render(
-                            context, source, output, startMs, endMs, splitFacecamRegion, captionCues, captionPreset, captionWords
+                            context, source, output, startMs, endMs, splitFacecamRegion, captionCues, captionPreset, captionWords, gameplayRegion
                         )
                     }
                     copyToDestination(context, output, destination, onFinished)

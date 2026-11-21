@@ -196,6 +196,20 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
         return rows
     }
 
+    internal fun creatorClipPreferences(): CreatorClipPreferences {
+        val examples = mutableListOf<ClipPreferenceExample>()
+        readableDatabase.rawQuery(
+            "SELECT start_ms, end_ms, transcript, review_status FROM highlights " +
+                "WHERE review_status IN ('APPROVED', 'REJECTED') ORDER BY id DESC LIMIT 200", null
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                examples += ClipPreferenceExample(cursor.getString(2).isNotBlank(),
+                    cursor.getLong(1) - cursor.getLong(0), cursor.getString(3) == "APPROVED")
+            }
+        }
+        return CreatorClipPreferences(examples)
+    }
+
     fun updateHighlightTrim(projectId: Long, oldStartMs: Long, oldEndMs: Long, newStartMs: Long, newEndMs: Long): Boolean {
         require(newStartMs >= 0L && newEndMs > newStartMs)
         return writableDatabase.update(

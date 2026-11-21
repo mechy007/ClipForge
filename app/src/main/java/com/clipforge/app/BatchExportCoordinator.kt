@@ -36,7 +36,8 @@ object BatchExportCoordinator {
         transcript: List<TranscriptSegment> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         faceTrackingPath: List<CropFocus> = emptyList(),
-        splitFacecamRegion: StreamRegion? = null
+        splitFacecamRegion: StreamRegion? = null,
+        gameplayRegion: StreamRegion? = null
     ) {
         val previous = mutableStatus.value
         if (previous.running) return
@@ -47,8 +48,9 @@ object BatchExportCoordinator {
             mutableStatus.value = previous.copy(message = "Select up to ${BatchClipExporter.MAX_CLIPS_PER_BATCH} clips per batch.")
             return
         }
-        require(selectedClips.distinctBy { it.startMs to it.endMs }.size == selectedClips.size) {
-            "Duplicate highlight ranges cannot be exported in the same batch."
+        if (selectedClips.distinctBy { it.startMs to it.endMs }.size != selectedClips.size) {
+            mutableStatus.value = previous.copy(message = "Select only one clip for each start and end time.")
+            return
         }
 
         mutableStatus.value = BatchExportStatus(
@@ -63,7 +65,7 @@ object BatchExportCoordinator {
         scope.launch {
             try {
                 val verifiedClips = mutableListOf<ClipCandidate>()
-                BatchClipExporter.exportAll(appContext, folder, source, selectedClips, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion) { done, _, clip ->
+                BatchClipExporter.exportAll(appContext, folder, source, selectedClips, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion, gameplayRegion) { done, _, clip ->
                     verifiedClips += clip
                     mutableStatus.value = BatchExportStatus(
                         running = true,

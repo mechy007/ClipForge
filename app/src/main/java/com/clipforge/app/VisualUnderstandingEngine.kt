@@ -43,7 +43,7 @@ object VisualUnderstandingEngine {
             val pixels = IntArray(current.size)
             try {
                 retriever.setDataSource(context, source)
-                val step = maxOf(1_000L, durationMs / 600L)
+                val step = (durationMs / 600L).coerceIn(1_000L, 7_500L)
                 var time = 0L
                 while (time < durationMs) {
                     currentCoroutineContext().ensureActive()
@@ -148,7 +148,7 @@ internal object VisualOnlyHighlightDetector {
             val end = minOf(durationMs, start + window)
             if (end - start < 8_000L) break
             val frames = signals.activity.filter { it.timeMs >= start && it.timeMs < end }
-            if (frames.size >= 2 && frames.any { it.motion >= 0.08f || it.sceneChange }) {
+            if (frames.isNotEmpty() && frames.any { it.motion >= 0.08f || it.sceneChange }) {
                 val mean = frames.map { it.motion.coerceIn(0f, 1f) }.average().toFloat()
                 val action = frames.maxBy { it.motion }
                 val changes = frames.count { it.sceneChange }
@@ -186,13 +186,24 @@ internal fun rankVideoHighlights(
     visual: VisualUnderstandingResult,
     durationMs: Long,
     targetClipDurationMs: Long,
-    maxClips: Int
+    maxClips: Int,
+    preferences: CreatorClipPreferences = CreatorClipPreferences()
 ): List<ClipCandidate> {
     val speech = HighlightDetector.detect(transcript, durationMs, targetClipDurationMs, energy, visual.sceneCuts, maxClips)
     val candidates = VisualHighlightReranker.rerank(speech, visual) +
         VisualOnlyHighlightDetector.detect(visual, durationMs, targetClipDurationMs, maxClips)
     val chosen = mutableListOf<ClipCandidate>()
-    for (clip in ReactionSignalFusion.rerank(candidates, visual, energy).sortedByDescending { it.score }) {
+    val ranked = ReactionSignalFusion.rerank(candidates, visual, energy).map { clip ->
+        val formatted = if (clip.hook.isNotBlank()) {
+            val payoff = CreatorClipCuts.payoff(clip, transcript, energy, visual.activity)
+            val story = CreatorClipCuts.cut(clip, CreatorCut.FULL_CONTEXT, durationMs, transcript, payoff)
+            if (story.endMs - story.startMs >= 8_000L && story.endMs - story.startMs <= targetClipDurationMs + 3_000L) story else clip
+        } else clip
+        val adjustment = preferences.adjustment(formatted)
+        formatted.copy(score = (formatted.score + adjustment).coerceIn(0, 100),
+            reason = if (adjustment == 0) formatted.reason else formatted.reason + " Adjusted using your past clip reviews.")
+    }
+    for (clip in ranked.sortedByDescending { it.score }) {
         if (chosen.size >= maxClips) break
         if (chosen.none { existing ->
                 HighlightDetector.overlapOfShorter(existing.startMs, existing.endMs, clip.startMs, clip.endMs) > 0.65

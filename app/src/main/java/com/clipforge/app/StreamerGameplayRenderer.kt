@@ -23,7 +23,8 @@ internal object StreamerGameplayRenderer {
         facecam: StreamRegion,
         captions: List<CaptionCue> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
-        words: List<TimedWord> = emptyList()
+        words: List<TimedWord> = emptyList(),
+        gameplayRegion: StreamRegion? = null
     ) = withContext(Dispatchers.IO) {
         require(startMs >= 0L && endMs > startMs)
         val existing = source.takeIf { it.scheme == "file" }?.path?.let(::File)
@@ -53,7 +54,7 @@ internal object StreamerGameplayRenderer {
             }
             val raw = uncaptioned ?: destination
             val session = FFmpegKit.executeWithArguments(
-                arguments(input, raw, startMs, endMs, facecam, media.width, media.height)
+                arguments(input, raw, startMs, endMs, facecam, media.width, media.height, gameplayRegion)
             )
             check(ReturnCode.isSuccess(session.returnCode)) {
                 session.output?.trim()?.takeIf { it.isNotEmpty() } ?: "Split-screen encoding failed."
@@ -119,10 +120,10 @@ internal object StreamerGameplayRenderer {
     }
 
     internal fun arguments(
-        input: File, output: File, startMs: Long, endMs: Long, facecam: StreamRegion, width: Int, height: Int
+        input: File, output: File, startMs: Long, endMs: Long, facecam: StreamRegion, width: Int, height: Int, gameplayRegion: StreamRegion? = null
     ): Array<String> {
         val cam = StreamerGameplayLayout.facecamCrop(facecam, width, height)
-        val game = StreamerGameplayLayout.gameplayCrop(StreamRegion(0f, 0f, 1f, 1f), width, height)
+        val game = StreamerGameplayLayout.gameplayCrop(gameplayRegion ?: StreamRegion(0f, 0f, 1f, 1f), width, height)
         fun crop(region: StreamRegion): String {
             val x = (region.left * width).toInt().coerceIn(0, width - 2)
             val y = (region.top * height).toInt().coerceIn(0, height - 2)

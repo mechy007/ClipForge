@@ -7,7 +7,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -20,6 +19,8 @@ import java.io.File
  * The session retains durable per-segment checkpoints for a subsequent retry.
  */
 internal object DownloadWhileAnalyzing {
+    data class SectionPreview(val source: Uri, val clip: ClipCandidate, val sourceOffsetMs: Long)
+
     data class ImportedAnalysis(
         val source: Uri,
         val durationMs: Long,
@@ -37,6 +38,8 @@ internal object DownloadWhileAnalyzing {
         language: String? = null,
         targetClipDurationMs: Long = 30_000L,
         onStatus: (String) -> Unit = {},
+        preferences: CreatorClipPreferences = CreatorClipPreferences(),
+        onPreview: (SectionPreview) -> Unit = {},
         onDownloadProgress: (completed: Int, total: Int) -> Unit = { _, _ -> }
     ): ImportedAnalysis {
         val id = YouTubeLiveApiClient.parseVideoId(url)
@@ -54,45 +57,63 @@ internal object DownloadWhileAnalyzing {
         val complete = withContext(Dispatchers.IO) {
             ProgressiveAnalysisSession(context, fingerprint, scopedDirectory).completedSegments().size == planned.size
         }
-        if (existing == null || !complete) {
-            run(context, fingerprint, scopedDirectory, durationMs, language, onStatus) { publish ->
-                YouTubeSectionDownloader.download(
-                    context, url, height, durationMs, sections, publish, onDownloadProgress
-                )
-            }
-        }
-        val signals = withContext(Dispatchers.IO) {
-            ProgressiveAnalysisSession(context, fingerprint, scopedDirectory).completedSignals(durationMs)
-        }
-        val playableDuration = existing ?: run {
-            onStatus("Preparing recording for preview and export…")
-            try {
-                ProgressiveRecordingAssembler.assemble(planned, sections, importedFile)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                onStatus("Sections could not be joined. Downloading the complete recording…")
-                val downloaded = YouTubeVideoImporter.download(context, url, height) { }
-                withContext(Dispatchers.IO) {
-                    val file = File(checkNotNull(downloaded.path))
-                    try {
-                        val actual = ProgressiveRecordingAssembler.mediaDuration(file)
-                        check(kotlin.math.abs(actual - durationMs) <= 1_000L) {
-                            "The downloaded recording differs from the analyzed timeline."
+        val source: Uri
+        val playableDuration: Long
+        val signals: ProgressiveSignalIntegration.Signals
+        try {
+            if (existing == null || !complete) {
+                run(context, fingerprint, scopedDirectory, durationMs, language, onStatus,
+                    onSectionAnalyzed = { file, signals ->
+                        val span = signals.segment
+                        val length = span.endMs - span.startMs
+                        val text = signals.transcript.map { it.moveToSource(-span.startMs) }
+                        val energy = signals.audioEnergy.map {
+                            it.copy(startMs = it.startMs - span.startMs, endMs = it.endMs - span.startMs)
                         }
-                        check(file.renameTo(importedFile)) { "Could not save the completed recording." }
-                        actual
-                    } finally {
-                        file.delete()
+                        val best = withContext(Dispatchers.Default) {
+                            HighlightDetector.detect(text, length, targetClipDurationMs, energy, maxClips = 1).firstOrNull()
+                        }
+                        if (best != null && best.startMs >= 500L && best.endMs <= length - 500L) {
+                            withContext(Dispatchers.Main) {
+                                onPreview(SectionPreview(Uri.fromFile(file.file), best, span.startMs))
+                            }
+                        }
+                    }
+                ) { publish ->
+                    YouTubeSectionDownloader.download(
+                        context, url, height, durationMs, sections, publish
+                    ) { completed, total ->
+                        withContext(Dispatchers.Main) { onDownloadProgress(completed, total) }
                     }
                 }
             }
+            val restored = withContext(Dispatchers.IO) {
+                ProgressiveAnalysisSession(context, fingerprint, scopedDirectory).completedSignals(durationMs)
+            }
+            if (existing == null) onStatus("Preparing recording for preview and export…")
+            val actualDuration = existing ?: ProgressiveRecordingAssembler.assemble(planned, sections, importedFile)
+            playableDuration = actualDuration
+            source = Uri.fromFile(importedFile)
+            signals = restored
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            onStatus("Sections unavailable. Downloading the complete recording…")
+            val fullSource = YouTubeVideoImporter.download(context, url, height) { }
+            val fullDuration = withContext(Dispatchers.IO) {
+                ProgressiveRecordingAssembler.mediaDuration(File(checkNotNull(fullSource.path)))
+            }
+            val full = VideoTranscriber.transcribeWithSignals(context, fullSource, language, onStatus)
+            val visual = VisualUnderstandingEngine.analyze(context, fullSource, fullDuration)
+            val clips = withContext(Dispatchers.Default) {
+                rankVideoHighlights(full.segments, full.audioEnergy, visual, fullDuration, targetClipDurationMs, 10, preferences)
+            }
+            return ImportedAnalysis(fullSource, fullDuration, clips, full.segments)
         }
-        val source = Uri.fromFile(importedFile)
         onStatus("Checking motion and scene changes…")
         val visual = VisualUnderstandingEngine.analyze(context, source, playableDuration)
         val clips = withContext(Dispatchers.Default) {
-            rankVideoHighlights(signals.transcript, signals.audioEnergy, visual, playableDuration, targetClipDurationMs, 10)
+            rankVideoHighlights(signals.transcript, signals.audioEnergy, visual, playableDuration, targetClipDurationMs, 10, preferences)
         }
         // Keep sections for recovery until the assembled recording and checkpoint are usable.
         withContext(Dispatchers.IO) { sections.deleteRecursively() }
@@ -110,8 +131,9 @@ internal object DownloadWhileAnalyzing {
         durationMs: Long,
         language: String? = null,
         onStatus: (String) -> Unit = {},
+        onSectionAnalyzed: suspend (FinalizedMediaSegment, ProgressiveTranscriptionSignals) -> Unit = { _, _ -> },
         download: suspend (publish: suspend (FinalizedMediaSegment) -> Unit) -> Unit
-    ): List<ClipCandidate> = coroutineScope {
+    ): List<ClipCandidate> = withContext(Dispatchers.IO) {
         require(durationMs > 0L)
         val planned = ProgressiveSegmentPlanner.plan(durationMs)
         val session = ProgressiveAnalysisSession(context, sourceFingerprint, stateDirectory)
@@ -158,7 +180,7 @@ internal object DownloadWhileAnalyzing {
             val source = ProgressiveMediaSource { emit ->
                 for (segment in queue) emit(segment)
             }
-            val clips = session.analyze(source, durationMs, language, onStatus)
+            val clips = session.analyze(source, durationMs, language, onStatus, onSectionAnalyzed)
             producer.join()
             clips
         } catch (error: Throwable) {

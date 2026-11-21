@@ -25,7 +25,7 @@ internal object ProgressiveOfflineTranscription {
         checkpoint: ProgressiveSegmentCheckpoint,
         language: String? = null,
         onStatus: (String) -> Unit = {},
-        onSegmentTranscribed: suspend (ProgressiveTranscriptionSignals) -> Unit
+        onSegmentTranscribed: suspend (FinalizedMediaSegment, ProgressiveTranscriptionSignals) -> Unit
     ) {
         ProgressiveMediaPipeline.run(source, checkpoint) { finalized ->
             val span = finalized.segment
@@ -55,7 +55,7 @@ internal object ProgressiveOfflineTranscription {
                     endMs = Math.addExact(end, span.startMs)
                 )
             }
-            onSegmentTranscribed(ProgressiveTranscriptionSignals(span, transcript, energy))
+            onSegmentTranscribed(finalized, ProgressiveTranscriptionSignals(span, transcript, energy))
         }
     }
 }

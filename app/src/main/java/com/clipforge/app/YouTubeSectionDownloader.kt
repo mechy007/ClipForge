@@ -1,7 +1,6 @@
 package com.clipforge.app
 
 import android.content.Context
-import android.media.MediaMetadataRetriever
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -26,7 +25,7 @@ internal object YouTubeSectionDownloader {
         durationMs: Long,
         directory: File,
         publish: suspend (FinalizedMediaSegment) -> Unit,
-        onSegmentReady: (completed: Int, total: Int) -> Unit = { _, _ -> }
+        onSegmentReady: suspend (completed: Int, total: Int) -> Unit = { _, _ -> }
     ) {
         require(YouTubeLinkClassifier.isYouTubeUrl(url))
         require(height in setOf(720, 1080, 2160))
@@ -38,9 +37,21 @@ internal object YouTubeSectionDownloader {
             FFmpeg.init(context.applicationContext)
         }
         val planned = ProgressiveSegmentPlanner.plan(durationMs)
+        var cumulativeDuration = 0L
         for (segment in planned) {
+            val expectedDuration = segment.endMs - segment.startMs
+            fun validDuration(file: File): Long? {
+                if (!YouTubeDownloadValidation.isValidMp4(file)) return null
+                val actual = runCatching { ProgressiveRecordingAssembler.mediaDuration(file) }.getOrNull() ?: return null
+                return actual.takeIf {
+                    val tolerance = if (segment == planned.last()) 1_000L else 350L
+                    kotlin.math.abs(it - expectedDuration) <= tolerance &&
+                        kotlin.math.abs(cumulativeDuration + it - segment.endMs) <= tolerance
+                }
+            }
             val finalized = File(directory, "segment-${segment.index}.mp4")
-            if (!YouTubeDownloadValidation.isValidMp4(finalized)) {
+            val cachedDuration = validDuration(finalized)
+            if (cachedDuration == null) {
                 finalized.delete()
                 val staging = File(directory, "part-${segment.index}")
                 check(staging.isDirectory || staging.mkdirs()) { "Cannot create segment staging directory" }
@@ -62,27 +73,16 @@ internal object YouTubeSectionDownloader {
                         YoutubeDL.execute(request, "clipforge-section-${java.util.UUID.randomUUID()}", false)
                     }
                     val output = File(staging, "section.mp4")
-                    check(YouTubeDownloadValidation.isValidMp4(output)) {
-                        "Section ${segment.index} is not a playable MP4"
+                    val actual = checkNotNull(validDuration(output)) {
+                        "Section ${segment.index} does not match the recording timeline."
                     }
                     check(output.renameTo(finalized)) { "Could not finalize section ${segment.index}" }
+                    cumulativeDuration += actual
                 } finally {
                     staging.deleteRecursively()
                 }
             }
-            // Cached segments must remain independently playable after an interruption.
-            // Check duration as well as MP4 structure before publishing to Whisper.
-            val retriever = MediaMetadataRetriever()
-            val actualDuration = try {
-                retriever.setDataSource(finalized.absolutePath)
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
-            } finally {
-                retriever.release()
-            }
-            check(actualDuration != null && actualDuration > 0L &&
-                kotlin.math.abs(actualDuration - (segment.endMs - segment.startMs)) <= 5_000L) {
-                "Section ${segment.index} has an invalid timeline duration"
-            }
+            if (cachedDuration != null) cumulativeDuration += cachedDuration
             publish(FinalizedMediaSegment(segment, finalized))
             onSegmentReady(segment.index + 1, planned.size)
         }
