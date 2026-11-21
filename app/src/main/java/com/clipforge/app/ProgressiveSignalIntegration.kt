@@ -61,7 +61,7 @@ internal object ProgressiveSignalIntegration {
                 val rms = item.getDouble("rms")
                 val peak = item.getDouble("peak")
                 require(a >= start && b > a && b <= end &&
-                    rms.isFinite() && peak.isFinite() && rms >= 0.0 && peak >= 0.0)
+                    rms.isFinite() && peak.isFinite() && rms >= 0.0 && peak >= 0.0 &&\n                    rms.toFloat().isFinite() && peak.toFloat().isFinite())
                 energy += AudioEnergyWindow(a, b, rms.toFloat(), peak.toFloat())
             }
         }
