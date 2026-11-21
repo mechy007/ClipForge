@@ -24,6 +24,12 @@ object BatchClipExporter {
         onProgress: (Int, Int, ClipCandidate) -> Unit = { _, _, _ -> }
     ): Int {
         require(clips.isNotEmpty()) { "No highlights were selected." }
+        require(clips.all { it.startMs >= 0L && it.endMs > it.startMs }) {
+            "All selected highlights must have valid start and end times."
+        }
+        require(clips.distinctBy { it.startMs to it.endMs }.size == clips.size) {
+            "Duplicate highlight ranges would overwrite exported MP4 filenames."
+        }
         val resolver = context.contentResolver
         val treeDocumentId = DocumentsContract.getTreeDocumentId(folder)
         val parentDocument = DocumentsContract.buildDocumentUriUsingTree(folder, treeDocumentId)
