@@ -86,3 +86,48 @@ internal object VisualHighlightReranker {
             }
         }.sortedByDescending { it.score }
 }
+
+/**
+ * Generates candidates even when Whisper finds no speech (for example silent
+ * gameplay). Peaks are selected by visual activity with non-overlapping windows.
+ */
+internal object VisualOnlyHighlightDetector {
+    fun detect(
+        signals: VisualUnderstandingResult,
+        durationMs: Long,
+        targetDurationMs: Long = 30_000L,
+        maxClips: Int = 10
+    ): List<ClipCandidate> {
+        if (durationMs < 8_000L || signals.activity.isEmpty()) return emptyList()
+        val window = targetDurationMs.coerceIn(8_000L, 60_000L).coerceAtMost(durationMs)
+        val step = (window / 3L).coerceAtLeast(1_000L)
+        val candidates = mutableListOf<ClipCandidate>()
+        var start = 0L
+        while (start < durationMs) {
+            val end = minOf(durationMs, start + window)
+            if (end - start < 8_000L) break
+            val frames = signals.activity.filter { it.timeMs >= start && it.timeMs < end }
+            if (frames.size >= 2) {
+                val mean = frames.map { it.motion.coerceIn(0f, 1f) }.average().toFloat()
+                val peak = frames.maxOf { it.motion.coerceIn(0f, 1f) }
+                val changes = frames.count { it.sceneChange }
+                val score = ((mean * 100f * 0.6f) + (peak * 100f * 0.3f) +
+                    (changes.coerceAtMost(3) * 3f)).toInt().coerceIn(0, 100)
+                candidates += ClipCandidate(start, end, "Visual highlight", "",
+                    score, "Offline visual motion and scene-change signals; no speech required.")
+            }
+            if (start >= durationMs - step) break
+            start += step
+        }
+        val chosen = mutableListOf<ClipCandidate>()
+        for (candidate in candidates.sortedByDescending { it.score }) {
+            if (chosen.size >= maxClips.coerceIn(1, 100)) break
+            if (chosen.none {
+                    HighlightDetector.overlapOfShorter(
+                        candidate.startMs, candidate.endMs, it.startMs, it.endMs
+                    ) > 0.65
+                }) chosen += candidate
+        }
+        return chosen
+    }
+}
