@@ -33,15 +33,11 @@ internal object StreamerGameplayLayout {
 
     private fun fitAspect(region: StreamRegion, sourceAspect: Float, targetAspect: Float): StreamRegion {
         val desiredNormalizedAspect = targetAspect / sourceAspect
-        val w: Float
-        val h: Float
-        if (region.width / region.height > desiredNormalizedAspect) {
-            w = region.width
-            h = (w / desiredNormalizedAspect).coerceAtMost(1f)
-        } else {
-            h = region.height
-            w = (h * desiredNormalizedAspect).coerceAtMost(1f)
-        }
+        // Expand around the requested region when possible. If it cannot fit
+        // inside the source at the panel aspect, crop symmetrically instead.
+        val desiredHeight = maxOf(region.height, region.width / desiredNormalizedAspect)
+        val h = minOf(desiredHeight, 1f, 1f / desiredNormalizedAspect)
+        val w = h * desiredNormalizedAspect
         val centerX = (region.left + region.right) / 2f
         val centerY = (region.top + region.bottom) / 2f
         val left = (centerX - w / 2f).coerceIn(0f, 1f - w)
