@@ -2,6 +2,8 @@ package com.clipforge.app
 
 import android.content.Context
 import android.net.Uri
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -42,6 +44,23 @@ object VideoTranscriber {
         val pcmFile = File(context.cacheDir, "clipforge-audio-" + System.nanoTime() + ".pcm")
         var whisperSessionStarted = false
         try {
+            // Silent gameplay and screen recordings are valid inputs. Avoid loading
+            // Whisper or failing the entire visual pipeline when no audio exists.
+            val hasAudio = MediaExtractor().let { extractor ->
+                try {
+                    extractor.setDataSource(context, videoUri, null)
+                    (0 until extractor.trackCount).any { index ->
+                        extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+                            ?.startsWith("audio/") == true
+                    }
+                } finally {
+                    extractor.release()
+                }
+            }
+            if (!hasAudio) {
+                onStatus("No audio track; continuing with offline visual highlights…")
+                return@withContext TranscriptionResult(emptyList(), emptyList())
+            }
             onStatus("Preparing the bundled offline speech model…")
             WhisperModelManager.ensureModel(context) { _, _ -> }
             onStatus("Decoding video audio on this device…")
