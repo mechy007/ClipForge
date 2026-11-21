@@ -58,4 +58,23 @@ class VisualUnderstandingEngineTest {
         assertTrue(clips.size <= 3)
     }
 
+    @Test fun synchronizedReactionReceivesSmallBonus() {
+        val clip = ClipCandidate(0L, 20_000L, "reaction", "", 50)
+        val visual = VisualUnderstandingResult(listOf(VisualActivity(5_000L, 0.4f, true)))
+        val audio = listOf(
+            AudioEnergyWindow(4_800L, 5_800L, 0.4f, 0.9f),
+            AudioEnergyWindow(8_000L, 9_000L, 0.1f, 0.2f)
+        )
+        val ranked = ReactionSignalFusion.rerank(listOf(clip), visual, audio).single()
+        assertTrue(ranked.score > 50)
+        assertTrue(ranked.score <= 56)
+    }
+
+    @Test fun unrelatedAudioDoesNotBoostVisualMoment() {
+        val clip = ClipCandidate(0L, 20_000L, "reaction", "", 50)
+        val visual = VisualUnderstandingResult(listOf(VisualActivity(5_000L, 0.4f, true)))
+        val audio = listOf(AudioEnergyWindow(15_000L, 16_000L, 0.5f, 0.9f))
+        assertEquals(50, ReactionSignalFusion.rerank(listOf(clip), visual, audio).single().score)
+    }
+
 }
