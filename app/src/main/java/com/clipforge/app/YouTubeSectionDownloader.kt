@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -24,7 +25,8 @@ internal object YouTubeSectionDownloader {
         height: Int,
         durationMs: Long,
         directory: File,
-        publish: suspend (FinalizedMediaSegment) -> Unit
+        publish: suspend (FinalizedMediaSegment) -> Unit,
+        onSegmentReady: (completed: Int, total: Int) -> Unit = { _, _ -> }
     ) {
         require(YouTubeLinkClassifier.isYouTubeUrl(url))
         require(height in setOf(720, 1080, 2160))
@@ -68,7 +70,21 @@ internal object YouTubeSectionDownloader {
                     staging.deleteRecursively()
                 }
             }
+            // Cached segments must remain independently playable after an interruption.
+            // Check duration as well as MP4 structure before publishing to Whisper.
+            val retriever = MediaMetadataRetriever()
+            val actualDuration = try {
+                retriever.setDataSource(finalized.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            } finally {
+                retriever.release()
+            }
+            check(actualDuration != null && actualDuration > 0L &&
+                kotlin.math.abs(actualDuration - (segment.endMs - segment.startMs)) <= 5_000L) {
+                "Section ${segment.index} has an invalid timeline duration"
+            }
             publish(FinalizedMediaSegment(segment, finalized))
+            onSegmentReady(segment.index + 1, planned.size)
         }
     }
 }
