@@ -25,7 +25,8 @@ internal object DownloadWhileAnalyzing {
         durationMs: Long,
         stateDirectory: File,
         language: String? = null,
-        onStatus: (String) -> Unit = {}
+        onStatus: (String) -> Unit = {},
+        onDownloadProgress: (completed: Int, total: Int) -> Unit = { _, _ -> }
     ): List<ClipCandidate> {
         val id = YouTubeLiveApiClient.parseVideoId(url)
         val fingerprint = "youtube:$id:$height:$durationMs"
