@@ -379,6 +379,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
 
         }
     }
+    // Android 13+ requires runtime notification permission for visible progress.
+    // Denial must not prevent the user from importing a video.
+    val importNotificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { offlineImportPicker.launch(arrayOf("video/*")) }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
         val src = video; val clip = pending
         if (dest != null && src != null && clip != null && (!splitSelected || splitRegion != null)) {
@@ -1002,7 +1007,17 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         Icon(Icons.Default.FolderOpen, null); Text(if (video == null) "  Import video" else "  Change video")
                     }
                     OutlinedButton(
-                        onClick = { offlineImportPicker.launch(arrayOf("video/*")) },
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= 33 &&
+                                androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context, android.Manifest.permission.POST_NOTIFICATIONS
+                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                importNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                offlineImportPicker.launch(arrayOf("video/*"))
+                            }
+                        },
                         enabled = !localImportBusy && !analyzing && !importingLink,
                         modifier = Modifier.fillMaxWidth()
                     ) {
