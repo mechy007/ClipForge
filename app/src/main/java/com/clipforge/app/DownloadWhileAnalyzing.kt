@@ -3,6 +3,8 @@ package com.clipforge.app
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -148,6 +150,11 @@ internal object DownloadWhileAnalyzing {
         require(durationMs > 0L)
         val planned = ProgressiveSegmentPlanner.plan(durationMs)
         val session = ProgressiveAnalysisSession(context, sourceFingerprint, stateDirectory)
+        val mainHandler = Handler(Looper.getMainLooper())
+        val reportStatus: (String) -> Unit = { message ->
+            if (Looper.myLooper() == Looper.getMainLooper()) onStatus(message)
+            else mainHandler.post { onStatus(message) }
+        }
         val processed = session.completedSegments()
         var nextExpected = 0
         val queue = Channel<FinalizedMediaSegment>(capacity = 2)
@@ -191,7 +198,7 @@ internal object DownloadWhileAnalyzing {
             val source = ProgressiveMediaSource { emit ->
                 for (segment in queue) emit(segment)
             }
-            val clips = session.analyze(source, durationMs, language, onStatus, onSectionAnalyzed)
+            val clips = session.analyze(source, durationMs, language, reportStatus, onSectionAnalyzed)
             producer.join()
             clips
         } catch (error: Throwable) {
