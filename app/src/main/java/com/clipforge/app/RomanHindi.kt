@@ -3,9 +3,9 @@ package com.clipforge.app
 /** Offline phonetic spelling for Hindi captions. English and Malayalam text pass through. */
 internal object RomanHindi {
     private val hindiWord = Regex("[\\u0900-\\u0963\\u0972-\\u097f]+")
-    private val vowels = "अआइईउऊऋएऐओऔ".zip(listOf("a", "aa", "i", "ee", "u", "oo", "ri", "e", "ai", "o", "au")).toMap()
-    private val marks = "ािीुूृेैोौ".zip(listOf("aa", "i", "ee", "u", "oo", "ri", "e", "ai", "o", "au")).toMap()
-    private val consonants = "कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह".zip(
+    private val vowels = "अआइईउऊऋएऐओऔ".toList().zip(listOf("a", "aa", "i", "ee", "u", "oo", "ri", "e", "ai", "o", "au")).toMap()
+    private val marks = "ािीुूृेैोौ".toList().zip(listOf("aa", "i", "ee", "u", "oo", "ri", "e", "ai", "o", "au")).toMap()
+    private val consonants = "कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह".toList().zip(
         listOf("k", "kh", "g", "gh", "ng", "ch", "chh", "j", "jh", "ny", "t", "th", "d", "dh", "n",
             "t", "th", "d", "dh", "n", "p", "ph", "b", "bh", "m", "y", "r", "l", "v", "sh", "sh", "s", "h")
     ).toMap()
