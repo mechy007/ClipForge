@@ -17,6 +17,32 @@ import java.io.File
  * The session retains durable per-segment checkpoints for a subsequent retry.
  */
 internal object DownloadWhileAnalyzing {
+    /** Connects yt-dlp's finalized section downloads to the analysis queue. */
+    suspend fun runYouTubeSections(
+        context: Context,
+        url: String,
+        height: Int,
+        durationMs: Long,
+        stateDirectory: File,
+        language: String? = null,
+        onStatus: (String) -> Unit = {}
+    ): List<ClipCandidate> {
+        val id = YouTubeLiveApiClient.parseVideoId(url)
+        return run(
+            context = context,
+            sourceFingerprint = "youtube:$id:$height:$durationMs",
+            stateDirectory = stateDirectory,
+            durationMs = durationMs,
+            language = language,
+            onStatus = onStatus
+        ) { publish ->
+            YouTubeSectionDownloader.download(
+                context, url, height, durationMs,
+                File(stateDirectory, "downloaded-sections"), publish
+            )
+        }
+    }
+
     suspend fun run(
         context: Context,
         sourceFingerprint: String,
