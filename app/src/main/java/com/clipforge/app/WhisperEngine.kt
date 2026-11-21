@@ -2,6 +2,9 @@ package com.clipforge.app
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 data class TranscriptSegment(
@@ -31,6 +34,8 @@ object WhisperEngine {
         System.loadLibrary("clipforge_whisper")
     }
 
+    private val sessionLock = Mutex()
+
     private external fun loadModel(modelPath: String): Boolean
     private external fun transcribe(
         audioSamples: FloatArray,
@@ -39,7 +44,7 @@ object WhisperEngine {
     ): Array<String>?
     private external fun releaseModel()
 
-    suspend fun beginSession(context: Context) = withContext(Dispatchers.Default) {
+    private suspend fun beginSession(context: Context) = withContext(Dispatchers.Default) {
         val model = WhisperModelManager.modelFile(context)
         require(model.isFile) { "The bundled offline AI model is not installed." }
         check(loadModel(model.absolutePath)) {
@@ -47,8 +52,13 @@ object WhisperEngine {
         }
     }
 
-    suspend fun endSession() = withContext(Dispatchers.Default) {
-        releaseModel()
+    internal suspend fun <T> withSession(context: Context, block: suspend () -> T): T = sessionLock.withLock {
+        try {
+            beginSession(context)
+            block()
+        } finally {
+            withContext(NonCancellable + Dispatchers.Default) { releaseModel() }
+        }
     }
 
     suspend fun transcribe16Khz(

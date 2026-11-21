@@ -42,7 +42,6 @@ object VideoTranscriber {
         onStatus: (String) -> Unit = {}
     ): TranscriptionResult = withContext(Dispatchers.IO) {
         val pcmFile = File(context.cacheDir, "clipforge-audio-" + System.nanoTime() + ".pcm")
-        var whisperSessionStarted = false
         try {
             // Silent gameplay and screen recordings are valid inputs. Avoid loading
             // Whisper or failing the entire visual pipeline when no audio exists.
@@ -73,51 +72,46 @@ object VideoTranscriber {
                 "Decoded audio is empty or contains an incomplete PCM sample"
             }
 
-            WhisperEngine.beginSession(context)
-            whisperSessionStarted = true
-            onStatus("Starting on-device transcription…")
+            WhisperEngine.withSession(context) {
+                onStatus("Starting on-device transcription…")
 
-            val checkpoint = TranscriptCheckpoint.forVideo(context, videoUri, language)
-            onStatus("Resuming any previously completed transcription chunks…")
-            DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
-                val chunk = FloatArray(CHUNK_SAMPLES)
-                var chunkIndex = 0
+                val checkpoint = TranscriptCheckpoint.forVideo(context, videoUri, language)
+                onStatus("Resuming any previously completed transcription chunks…")
+                DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
+                    val chunk = FloatArray(CHUNK_SAMPLES)
+                    var chunkIndex = 0
 
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    var count = 0
-                    while (count < chunk.size) {
-                        try {
-                            chunk[count] = input.readFloat()
-                            count++
-                        } catch (_: EOFException) {
-                            break
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        var count = 0
+                        while (count < chunk.size) {
+                            try {
+                                chunk[count] = input.readFloat()
+                                count++
+                            } catch (_: EOFException) {
+                                break
+                            }
                         }
+                        if (count == 0) break
+
+                        if (!checkpoint.hasChunk(chunkIndex)) {
+                            onStatus("Transcribing audio · part " + (chunkIndex + 1))
+                            val audio = if (count == chunk.size) chunk else chunk.copyOf(count)
+                            val offsetMs = chunkIndex.toLong() * CHUNK_SECONDS * 1000L
+                            val segments = WhisperEngine.transcribe16Khz(context, audio, language)
+                            checkpoint.save(chunkIndex, segments.map { it.moveToSource(offsetMs) })
+                        } else onStatus("Restored transcription · part " + (chunkIndex + 1))
+                        chunkIndex++
                     }
-                    if (count == 0) break
-
-                    if (!checkpoint.hasChunk(chunkIndex)) {
-                        onStatus("Transcribing audio · part " + (chunkIndex + 1))
-                        val audio = if (count == chunk.size) chunk else chunk.copyOf(count)
-                        val offsetMs = chunkIndex.toLong() * CHUNK_SECONDS * 1000L
-                        val segments = WhisperEngine.transcribe16Khz(context, audio, language)
-                        checkpoint.save(chunkIndex, segments.map { it.moveToSource(offsetMs) })
-                    } else onStatus("Restored transcription · part " + (chunkIndex + 1))
-                    chunkIndex++
                 }
-            }
 
-            TranscriptionResult(
-                segments = checkpoint.segments(),
-                audioEnergy = audioEnergy
-            )
-        } finally {
-            try {
-                if (whisperSessionStarted) WhisperEngine.endSession()
-            } finally {
-                // Clean up large decoded audio even if native session teardown throws.
-                pcmFile.delete()
+                TranscriptionResult(
+                    segments = checkpoint.segments(),
+                    audioEnergy = audioEnergy
+                )
             }
+        } finally {
+            pcmFile.delete()
         }
     }
 }

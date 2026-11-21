@@ -273,10 +273,19 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            try { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: SecurityException) { }
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: SecurityException) { }
+            video = uri
+            duration = 0L
+            clips = emptyList()
+            selectedClips = emptySet()
+            reviewed = emptyMap()
+            transcriptSegments = emptyList()
+            activeProjectId = null
+            editing = null
+            message = "Video ready · run AI highlight detection."
         }
-        video = uri; duration = 0L; clips = emptyList(); transcriptSegments = emptyList(); activeProjectId = null; editing = null
-        message = if (uri == null) "No video selected." else "Video ready · run AI highlight detection."
     }
     var localImportBusy by remember { mutableStateOf(false) }
     var localImportStatus by remember { mutableStateOf("") }
@@ -496,7 +505,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             Icon(Icons.Default.Movie, null, tint = Accent, modifier = Modifier.size(30.dp))
                             Text("Start creating", fontWeight = FontWeight.Bold, fontSize = 21.sp)
                             Text("Bring in footage, refine the timeline, and export clips ready for Shorts or Reels.", color = Muted, fontSize = 13.sp)
-                            Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth()) {
+                            Button(onClick = { picker.launch(arrayOf("video/*")) }, enabled = !importingLink && !analyzing && !localImportBusy, modifier = Modifier.fillMaxWidth()) {
                                 Icon(Icons.Default.FolderOpen, null)
                                 Text("  Choose video")
                             }
@@ -844,12 +853,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     Text("START A PROJECT", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
                     Text(if (video == null) "Import your long-form video" else if (linkStatus.startsWith("Download failed:")) "Previously selected video" else "Your video is ready", fontSize = 19.sp, fontWeight = FontWeight.Bold)
                     Text("Podcasts, gameplay, interviews and more. Choose a video stored on your phone.", color = Muted, fontSize = 12.sp)
-                    Button(onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                    Button(onClick = { picker.launch(arrayOf("video/*")) }, enabled = !importingLink && !analyzing && !localImportBusy, modifier = Modifier.fillMaxWidth().height(50.dp)) {
                         Icon(Icons.Default.FolderOpen, null); Text(if (video == null) "  Import video" else "  Change video")
                     }
                     OutlinedButton(
                         onClick = { offlineImportPicker.launch(arrayOf("video/*")) },
-                        enabled = !localImportBusy && !analyzing,
+                        enabled = !localImportBusy && !analyzing && !importingLink,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(if (localImportBusy) "Copying offline video…" else "Copy video for reliable offline access")
@@ -1068,7 +1077,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
                     }
-                }, enabled = ready && !analyzing && duration > 0L && (exportAspectRatio != 9f / 16f || (verticalLayoutChoice != null && (!splitSelected || splitRegion != null))), modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                }, enabled = ready && !analyzing && !importingLink && !localImportBusy && duration > 0L && (exportAspectRatio != 9f / 16f || (verticalLayoutChoice != null && (!splitSelected || splitRegion != null))), modifier = Modifier.fillMaxWidth().height(54.dp)) {
                     Icon(Icons.Default.AutoAwesome, null)
                     Text(if (analyzing) "  Analyzing video…" else "  Find my best clips")
                 }
