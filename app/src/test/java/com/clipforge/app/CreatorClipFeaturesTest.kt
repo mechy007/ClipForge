@@ -26,6 +26,14 @@ class CreatorClipFeaturesTest {
         assertEquals(listOf(word.copy(word = "Minecraft!")), corrected.words)
     }
 
+    @Test fun romanHindiKeepsOtherLanguagesAndTiming() {
+        val word = TimedWord(0, 400, "नमस्ते!")
+        val segment = TranscriptSegment(0, 400, "नमस्ते! play മലയാളം", listOf(word))
+        val result = CaptionDictionary.apply("", listOf(segment), romanHindi = true).single()
+        assertEquals("namaste! play മലയാളം", result.text)
+        assertEquals(listOf(word.copy(word = "namaste!")), result.words)
+    }
+
     @Test fun trackedFacecamKeepsSeparateGameplayCrop() {
         val input = java.io.File("source.mp4")
         val output = java.io.File("output.mp4")
@@ -41,6 +49,18 @@ class CreatorClipFeaturesTest {
         assertTrue(filter.contains("if(lt(t,"))
         assertTrue(filter.contains("[game]crop="))
         assertTrue(filter.contains("[top][bottom]vstack"))
+    }
+
+    @Test fun gameplayFocusIgnoresFacecamAndFindsLocalAction() {
+        val width = VisualFrameSignals.WIDTH
+        val height = VisualFrameSignals.HEIGHT
+        val before = FloatArray(width * height)
+        val after = before.copyOf()
+        for (y in 2..10) for (x in 2..14) after[y * width + x] = 1f
+        for (y in 20..24) for (x in 49..54) after[y * width + x] = 1f
+        val focus = checkNotNull(GameplayFocusAnalyzer.focus(before, after, StreamRegion(0f, 0f, 1f, 1f),
+            StreamRegion(0f, 0f, .25f, .35f)))
+        assertTrue(focus.first > .75f && focus.second > .5f)
     }
 
     @Test fun localReviewsBiasMatchingClipsOnly() {

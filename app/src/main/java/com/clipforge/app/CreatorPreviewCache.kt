@@ -8,7 +8,7 @@ internal class CreatorPreviewCache {
     data class Key(
         val source: Uri, val startMs: Long, val endMs: Long, val aspect: Float,
         val tracking: List<CropFocus>, val facecam: StreamRegion?, val gameplay: StreamRegion?,
-        val captions: List<CaptionCue>, val preset: CaptionPreset, val words: List<TimedWord>
+        val gameplayTracking: List<CropFocus>, val captions: List<CaptionCue>, val preset: CaptionPreset, val words: List<TimedWord>
     )
 
     private val files = LinkedHashMap<Key, File>(4, .75f, true)

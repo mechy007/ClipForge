@@ -37,7 +37,8 @@ object BatchExportCoordinator {
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         faceTrackingPath: List<CropFocus> = emptyList(),
         splitFacecamRegion: StreamRegion? = null,
-        gameplayRegion: StreamRegion? = null
+        gameplayRegion: StreamRegion? = null,
+        gameplayTracking: List<CropFocus> = emptyList()
     ) {
         val previous = mutableStatus.value
         if (previous.running) return
@@ -65,7 +66,7 @@ object BatchExportCoordinator {
         scope.launch {
             try {
                 val verifiedClips = mutableListOf<ClipCandidate>()
-                BatchClipExporter.exportAll(appContext, folder, source, selectedClips, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion, gameplayRegion) { done, _, clip ->
+                BatchClipExporter.exportAll(appContext, folder, source, selectedClips, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion, gameplayRegion, gameplayTracking) { done, _, clip ->
                     verifiedClips += clip
                     mutableStatus.value = BatchExportStatus(
                         running = true,

@@ -26,6 +26,7 @@ object BatchClipExporter {
         faceTrackingPath: List<CropFocus> = emptyList(),
         splitFacecamRegion: StreamRegion? = null,
         gameplayRegion: StreamRegion? = null,
+        gameplayTracking: List<CropFocus> = emptyList(),
         onProgress: (Int, Int, ClipCandidate) -> Unit = { _, _, _ -> }
     ): Int {
         require(clips.isNotEmpty()) { "No highlights were selected." }
@@ -46,7 +47,7 @@ object BatchClipExporter {
         try {
             val expectAudio = withContext(Dispatchers.IO) { EncodedClipVerifier.sourceHasAudio(context, source) }
             val journal = withContext(Dispatchers.IO) {
-                BatchExportJournal.open(context, folder, source, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion, gameplayRegion)
+                BatchExportJournal.open(context, folder, source, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion, gameplayRegion, gameplayTracking)
             }
 
             for (clip in clips) {
@@ -113,6 +114,7 @@ object BatchClipExporter {
                                 faceTrackingPath = faceTrackingPath,
                                 splitFacecamRegion = splitFacecamRegion,
                                 gameplayRegion = gameplayRegion,
+                                gameplayTracking = gameplayTracking,
                                 captionCues = CaptionTrack.fromTranscript(transcript, clip.startMs, clip.endMs),
                                 captionPreset = captionPreset,
                                 captionWords = if (captionPreset == CaptionPreset.KARAOKE) {

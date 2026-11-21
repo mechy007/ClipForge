@@ -169,7 +169,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     val creatorSettings = remember(context) { context.getSharedPreferences("creator-settings", android.content.Context.MODE_PRIVATE) }
     var dictionary by remember { mutableStateOf(creatorSettings.getString("captions", "").orEmpty()) }
     var editDictionary by remember { mutableStateOf(false) }
-    val captionTranscript = remember(transcriptSegments, dictionary) { CaptionDictionary.apply(dictionary, transcriptSegments) }
+    var romanHindi by remember { mutableStateOf(creatorSettings.getBoolean("roman-hindi", false)) }
+    val captionTranscript = remember(transcriptSegments, dictionary, romanHindi) {
+        CaptionDictionary.apply(dictionary, transcriptSegments, romanHindi)
+    }
     var publishingClip by remember { mutableStateOf<ClipCandidate?>(null) }
     var pendingCover by remember { mutableStateOf<Pair<Uri, Long>?>(null) }
     var pendingCaptionCues by remember { mutableStateOf<List<CaptionCue>?>(null) }
@@ -194,6 +197,9 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var gameplayRegion by remember(video) { mutableStateOf<StreamRegion?>(null) }
     var adjustGameplay by remember(video) { mutableStateOf(false) }
     val splitGameplay = gameplayRegion.takeIf { splitSelected }
+    var gameTracking by remember(video, splitRegion, splitGameplay) { mutableStateOf<List<CropFocus>>(emptyList()) }
+    var trackingGame by remember(video, splitRegion, splitGameplay) { mutableStateOf(false) }
+    val exportGameplayTracking = if (splitSelected) gameTracking else emptyList()
     LaunchedEffect(video, splitSelected, duration > 0L, facecamScanRequest) {
         val source = video ?: return@LaunchedEffect
         if (!splitSelected || duration <= 0L || facecamRegion != null) return@LaunchedEffect
@@ -351,6 +357,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 faceTrackingPath = exportTracking,
                 splitFacecamRegion = splitRegion,
                 gameplayRegion = splitGameplay,
+                gameplayTracking = exportGameplayTracking,
                 captionCues = cues,
                 captionPreset = runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
                 captionWords = if (burnCaptions && captionPreset == CaptionPreset.KARAOKE.name) {
@@ -379,7 +386,8 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 runCatching { CaptionPreset.valueOf(captionPreset) }.getOrDefault(CaptionPreset.CLEAN),
                 faceTrackingPath = exportTracking,
                 splitFacecamRegion = splitRegion,
-                gameplayRegion = splitGameplay
+                gameplayRegion = splitGameplay,
+                gameplayTracking = exportGameplayTracking
             )
         }
     }
@@ -1153,6 +1161,38 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             OutlinedButton(onClick = { adjustGameplay = !adjustGameplay }) {
                                 Text(if (adjustGameplay) "Done adjusting gameplay" else "Adjust gameplay crop")
                             }
+                            OutlinedButton(
+                                enabled = !trackingGame && !analyzing && !importingLink && duration > 0L,
+                                onClick = {
+                                    if (gameTracking.isNotEmpty()) gameTracking = emptyList()
+                                    else {
+                                        val source = video
+                                        val chosen = gameplayRegion
+                                        if (source != null) scope.launch {
+                                            trackingGame = true
+                                            try {
+                                                val area = chosen ?: StreamRegion(0f, 0f, 1f, 1f)
+                                                val track = GameplayFocusAnalyzer.analyze(context, source, duration, area, region)
+                                                if (video == source && gameplayRegion == chosen && facecamRegion == region) {
+                                                    gameTracking = track
+                                                    facecamDetectionMessage = if (track.isEmpty()) "No concentrated gameplay motion found. Using the fixed crop."
+                                                        else "Motion tracking enabled in the gameplay panel."
+                                                }
+                                            } catch (cancelled: CancellationException) {
+                                                throw cancelled
+                                            } catch (_: Exception) {
+                                                facecamDetectionMessage = "Gameplay motion tracking unavailable. Using the fixed crop."
+                                            } finally { trackingGame = false }
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text(when {
+                                    trackingGame -> "Checking gameplay motion…"
+                                    gameTracking.isNotEmpty() -> "Lock gameplay crop"
+                                    else -> "Follow gameplay motion"
+                                })
+                            }
                             if (adjustGameplay) {
                                 val game = gameplayRegion ?: StreamRegion(.15f, .05f, .85f, .95f)
                                 video?.let { source -> FacecamRegionFrame(source, duration / 2, game) { gameplayRegion = it } }
@@ -1416,18 +1456,26 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             if (editDictionary) {
                 var entries by remember { mutableStateOf(dictionary) }
+                var useRoman by remember { mutableStateOf(romanHindi) }
                 AlertDialog(
                     onDismissRequest = { editDictionary = false },
                     title = { Text("Caption dictionary") },
                     text = {
-                        OutlinedTextField(entries, { entries = it.take(4000) },
-                            label = { Text("One correction per line") },
-                            supportingText = { Text("Example: maincraft=Minecraft") }, minLines = 4, maxLines = 6)
+                        Column {
+                            OutlinedTextField(entries, { entries = it.take(4000) },
+                                label = { Text("One correction per line") },
+                                supportingText = { Text("Example: maincraft=Minecraft") }, minLines = 4, maxLines = 6)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = useRoman, onCheckedChange = { useRoman = it })
+                                Text("Roman Hindi captions", modifier = Modifier.weight(1f))
+                            }
+                        }
                     },
                     confirmButton = {
                         TextButton(onClick = {
                             dictionary = entries
-                            creatorSettings.edit().putString("captions", entries).apply()
+                            romanHindi = useRoman
+                            creatorSettings.edit().putString("captions", entries).putBoolean("roman-hindi", useRoman).apply()
                             editDictionary = false
                         }) { Text("Save") }
                     }
@@ -1499,7 +1547,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     splitSelected && splitRegion == null -> Text("Set the facecam region in Studio to preview this layout.")
                                     splitSelected || exportTracking.isNotEmpty() || cues.isNotEmpty() -> {
                                         RenderedClipPreview(source, clip, exportAspectRatio, exportTracking, splitRegion,
-                                            cues, CaptionPreset.valueOf(captionPreset), words, splitGameplay, previewCache)
+                                            cues, CaptionPreset.valueOf(captionPreset), words, splitGameplay, exportGameplayTracking, previewCache)
                                     }
                                     else -> {
                                         var clipPreviewError by remember(source, clip) { mutableStateOf<String?>(null) }
@@ -1695,11 +1743,12 @@ private fun RenderedClipPreview(
     preset: CaptionPreset,
     words: List<TimedWord>,
     gameplayRegion: StreamRegion?,
+    gameplayTracking: List<CropFocus>,
     cache: CreatorPreviewCache
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var retry by remember { mutableIntStateOf(0) }
-    val key = CreatorPreviewCache.Key(source, clip.startMs, clip.endMs, aspect, tracking, region, gameplayRegion, captions, preset, words)
+    val key = CreatorPreviewCache.Key(source, clip.startMs, clip.endMs, aspect, tracking, region, gameplayRegion, gameplayTracking, captions, preset, words)
     var preview by remember(key, retry) { mutableStateOf<Uri?>(null) }
     var error by remember(key, retry) { mutableStateOf<String?>(null) }
     LaunchedEffect(key, retry) {
@@ -1721,6 +1770,7 @@ private fun RenderedClipPreview(
                     context, source, uri, clip.startMs, clip.endMs,
                     aspectRatio = aspect, faceTrackingPath = tracking, splitFacecamRegion = region,
                     captionCues = captions, captionPreset = preset, captionWords = words, gameplayRegion = gameplayRegion,
+                    gameplayTracking = gameplayTracking,
                     onStatus = {},
                     onFinished = { success, message ->
                         if (success) continuation.resume(Unit)

@@ -25,11 +25,15 @@ Style: Default,Roboto,$fontSize,&H00FFFFFF,&H0000E6FF,&H00000000,&H80000000,-1,0
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-    fun render(words: List<TimedWord>, clipDurationMs: Long, maxWords: Int = 3, aspectRatio: Float = 9f / 16f): String {
+    fun render(words: List<TimedWord>, clipDurationMs: Long, maxWords: Int = 3, aspectRatio: Float = 9f / 16f, splitScreen: Boolean = false): String {
         require(clipDurationMs > 0)
         require(maxWords in 1..3)
         val height = (1080 / aspectRatio.coerceIn(0.5f, 2f)).toInt()
-        val baseline = if (height == 1920) 1150 else (height * 0.75f).toInt()
+        val baseline = when {
+            splitScreen -> (height * 0.52f).toInt()
+            height == 1920 -> 1150
+            else -> (height * 0.75f).toInt()
+        }
         val valid = words.filter { it.startMs >= 0 && it.endMs > it.startMs && it.startMs < clipDurationMs && it.word.isNotBlank() }
             .sortedBy { it.startMs }
         return buildString {

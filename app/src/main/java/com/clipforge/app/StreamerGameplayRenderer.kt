@@ -25,7 +25,8 @@ internal object StreamerGameplayRenderer {
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         words: List<TimedWord> = emptyList(),
         gameplayRegion: StreamRegion? = null,
-        facecamTracking: List<CropFocus> = emptyList()
+        facecamTracking: List<CropFocus> = emptyList(),
+        gameplayTracking: List<CropFocus> = emptyList()
     ) = withContext(Dispatchers.IO) {
         require(startMs >= 0L && endMs > startMs)
         val existing = source.takeIf { it.scheme == "file" }?.path?.let(::File)
@@ -55,7 +56,7 @@ internal object StreamerGameplayRenderer {
             }
             val raw = uncaptioned ?: destination
             val session = FFmpegKit.executeWithArguments(
-                arguments(input, raw, startMs, endMs, facecam, media.width, media.height, gameplayRegion, facecamTracking)
+                arguments(input, raw, startMs, endMs, facecam, media.width, media.height, gameplayRegion, facecamTracking, gameplayTracking)
             )
             check(ReturnCode.isSuccess(session.returnCode)) {
                 session.output?.trim()?.takeIf { it.isNotEmpty() } ?: "Split-screen encoding failed."
@@ -65,7 +66,7 @@ internal object StreamerGameplayRenderer {
                 // Wait for the callback before deleting files the encoder may still be using.
                 suspendCoroutine<Unit> { continuation ->
                     CaptionBurnIn.render(
-                        context, raw, destination, captions, captionPreset, words, endMs - startMs
+                        context, raw, destination, captions, captionPreset, words, endMs - startMs, splitScreen = true
                     ) { ok, message ->
                         continuation.resumeWith(if (ok) Result.success(Unit) else Result.failure(IllegalStateException(message)))
                     }
@@ -122,7 +123,8 @@ internal object StreamerGameplayRenderer {
 
     internal fun arguments(
         input: File, output: File, startMs: Long, endMs: Long, facecam: StreamRegion, width: Int, height: Int,
-        gameplayRegion: StreamRegion? = null, facecamTracking: List<CropFocus> = emptyList()
+        gameplayRegion: StreamRegion? = null, facecamTracking: List<CropFocus> = emptyList(),
+        gameplayTracking: List<CropFocus> = emptyList()
     ): Array<String> {
         val cam = StreamerGameplayLayout.facecamCrop(facecam, width, height)
         val game = StreamerGameplayLayout.gameplayCrop(gameplayRegion ?: StreamRegion(0f, 0f, 1f, 1f), width, height)
@@ -133,23 +135,23 @@ internal object StreamerGameplayRenderer {
             val h = (region.height * height).toInt().coerceIn(2, height - y)
             return "crop=$w:$h:$x:$y:exact=1,scale=${StreamerGameplayLayout.OUTPUT_WIDTH}:${StreamerGameplayLayout.PANEL_HEIGHT}:flags=bicubic,setsar=1"
         }
-        val relevantTracking = facecamTracking.filter { it.timeMs in (startMs - 2_000)..(endMs + 2_000) }
-        val facecamFilter = if (relevantTracking.size < 2 || minOf(cam.width, cam.height) < .06f) {
-            crop(cam)
-        } else {
-            val cropWidth = cam.width * .85f
-            val cropHeight = cam.height * .85f
-            val bounded = relevantTracking.map {
+        fun panelCrop(bounds: StreamRegion, tracking: List<CropFocus>): String {
+            val samples = tracking.filter { it.timeMs in (startMs - 2_000)..(endMs + 2_000) }
+            if (samples.size < 2 || minOf(bounds.width, bounds.height) < .06f) return crop(bounds)
+            val cropWidth = bounds.width * .85f
+            val cropHeight = bounds.height * .85f
+            val bounded = samples.map {
                 it.copy(
-                    centerX = it.centerX.coerceIn(cam.left + cropWidth / 2, cam.right - cropWidth / 2),
-                    centerY = it.centerY.coerceIn(cam.top + cropHeight / 2, cam.bottom - cropHeight / 2),
+                    centerX = it.centerX.coerceIn(bounds.left + cropWidth / 2, bounds.right - cropWidth / 2),
+                    centerY = it.centerY.coerceIn(bounds.top + cropHeight / 2, bounds.bottom - cropHeight / 2),
                     width = cropWidth, height = cropHeight
                 )
             }
-            FaceCropFilterBuilder.build(bounded, startMs, endMs) +
+            return FaceCropFilterBuilder.build(bounded, startMs, endMs) +
                 ",scale=${StreamerGameplayLayout.OUTPUT_WIDTH}:${StreamerGameplayLayout.PANEL_HEIGHT}:flags=bicubic,setsar=1"
         }
-        val filter = "[0:v:0]split=2[cam][game];[cam]$facecamFilter[top];[game]${crop(game)}[bottom];[top][bottom]vstack=inputs=2[v]"
+        val filter = "[0:v:0]split=2[cam][game];[cam]${panelCrop(cam, facecamTracking)}[top];" +
+            "[game]${panelCrop(game, gameplayTracking)}[bottom];[top][bottom]vstack=inputs=2[v]"
         fun seconds(ms: Long) = String.format(Locale.US, "%.3f", ms / 1000.0)
         return arrayOf(
             "-y", "-loglevel", "error", "-ss", seconds(startMs), "-i", input.absolutePath,

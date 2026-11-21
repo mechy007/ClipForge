@@ -32,8 +32,8 @@ Highlight scores are heuristic estimates of content signals. They do not predict
 
 - **Edit timing** offers Fast Hook, Full Context, and Reaction First. The presets use offline timing signals and preserve the recording's sequence. Preview or adjust a preset before saving it.
 - Approve or reject highlights to tune future rankings on this device. The ranking uses recent feedback and the length and speech characteristics of each clip.
-- In 9:16 split-screen, reposition the facecam or gameplay crop on a source frame. **Follow streamer’s face** uses detections inside the facecam area. **Lock facecam crop** switches back to the selected rectangle.
-- **Caption dictionary** stores one whole-word correction per line, for example `maincraft=Minecraft`. Words retain their timestamps, including in exported karaoke captions.
+- In 9:16 split-screen, reposition the facecam or gameplay crop on a source frame. **Follow streamer’s face** uses detections inside the facecam area. **Lock facecam crop** switches back to the selected rectangle. **Follow gameplay motion** uses concentrated movement outside the facecam region and keeps the crop inside the selected gameplay area.
+- **Caption dictionary** stores one whole-word correction per line, for example `maincraft=Minecraft`. Enable Roman Hindi for approximate Latin-script Hindi spelling. Words retain their timestamps, including in exported karaoke captions.
 - **Publish pack** copies editable title and creator credit and saves a chosen source frame as JPEG.
 - **Analyze during download** can show previews from completed, analyzed sections. Trim or approve a preview to bring it into the completed project when those sections form the final recording.
 

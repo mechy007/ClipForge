@@ -45,7 +45,8 @@ internal class BatchExportJournal(private val file: AtomicFile?, private val rec
 
         fun open(
             context: Context, folder: Uri, source: Uri, aspect: Float, transcript: List<TranscriptSegment>,
-            preset: CaptionPreset, tracking: List<CropFocus>, split: StreamRegion?, gameplayRegion: StreamRegion? = null
+            preset: CaptionPreset, tracking: List<CropFocus>, split: StreamRegion?, gameplayRegion: StreamRegion? = null,
+            gameplayTracking: List<CropFocus> = emptyList()
         ): BatchExportJournal {
             val revision = sourceRevision(context, source)
             val hash = MessageDigest.getInstance("SHA-256")
@@ -57,6 +58,7 @@ internal class BatchExportJournal(private val file: AtomicFile?, private val rec
             }
             listOf("v1", source.toString(), revision.orEmpty(), folder.toString(), aspect.toString(), preset.name, split.toString()).forEach(::add)
             gameplayRegion?.let { add(it.toString()) }
+            if (gameplayTracking.isNotEmpty()) add(gameplayTracking.toString())
             tracking.forEach { add(it.toString()) }
             transcript.forEach { add(it.toString()) }
             val key = hash.digest().joinToString("") { "%02x".format(it) }

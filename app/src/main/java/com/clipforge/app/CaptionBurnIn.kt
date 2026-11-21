@@ -19,6 +19,7 @@ object CaptionBurnIn {
         alignedWords: List<TimedWord> = emptyList(),
         clipDurationMs: Long = 0L,
         aspectRatio: Float = 9f / 16f,
+        splitScreen: Boolean = false,
         onFinished: (Boolean, String) -> Unit
     ) {
         val wordAligned = preset == CaptionPreset.KARAOKE && alignedWords.isNotEmpty() && clipDurationMs > 0L
@@ -26,14 +27,15 @@ object CaptionBurnIn {
         try {
             require(input.isFile && input.length() > 0L) { "Input video is missing or empty." }
             require(cues.isNotEmpty() || wordAligned) { "There are no captions to burn in." }
-            subtitle.writeText(if (wordAligned) AssKaraokeTrack.render(alignedWords, clipDurationMs, aspectRatio = aspectRatio) else CaptionTrack.toSrt(cues), Charsets.UTF_8)
+            subtitle.writeText(if (wordAligned) AssKaraokeTrack.render(alignedWords, clipDurationMs, aspectRatio = aspectRatio, splitScreen = splitScreen) else CaptionTrack.toSrt(cues), Charsets.UTF_8)
             val style = when (preset) {
                 CaptionPreset.CLEAN -> "FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48"
                 CaptionPreset.BOLD -> "FontName=Arial,FontSize=22,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=52"
                 CaptionPreset.KARAOKE -> "FontName=Arial,FontSize=21,Bold=1,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2,MarginV=52"
                 CaptionPreset.BOXED -> "FontName=Arial,FontSize=19,Bold=1,PrimaryColour=&H00FFFFFF,BackColour=&H90000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=48"
             }
-            val arguments = buildArguments(input.absolutePath, subtitle.absolutePath, output.absolutePath, style.takeUnless { wordAligned })
+            val positioned = if (splitScreen) style.replace("Alignment=2", "Alignment=5") else style
+            val arguments = buildArguments(input.absolutePath, subtitle.absolutePath, output.absolutePath, positioned.takeUnless { wordAligned })
             FFmpegKit.executeWithArgumentsAsync(arguments) { session ->
                 subtitle.delete()
                 val success = ReturnCode.isSuccess(session.returnCode) && output.isFile && output.length() > 0L
