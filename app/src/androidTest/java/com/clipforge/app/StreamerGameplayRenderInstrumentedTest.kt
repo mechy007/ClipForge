@@ -76,6 +76,35 @@ class StreamerGameplayRenderInstrumentedTest {
     }
 
     @Test
+    fun rendersIndependentTrackingPathsInBothPanels() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "split-tracking-${System.nanoTime()}").apply { mkdirs() }
+        try {
+            val source = File(directory, "source.mp4")
+            val output = File(directory, "tracked.mp4")
+            encode(
+                "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=640x360:r=15:d=2",
+                "-vf", "drawbox=x=0:y=0:w=160:h=144:color=red:t=fill",
+                "-c:v", "libopenh264", "-pix_fmt", "yuv420p", source.absolutePath
+            )
+            val face = StreamRegion(0f, 0f, .25f, .40f)
+            val game = StreamRegion(.35f, 0f, 1f, 1f)
+            StreamerGameplayRenderer.render(
+                context, Uri.fromFile(source), output, 0L, 1400L, face,
+                gameplayRegion = game,
+                facecamTracking = listOf(CropFocus(0, .11f, .18f, face.width, face.height),
+                    CropFocus(1000, .14f, .23f, face.width, face.height)),
+                gameplayTracking = listOf(CropFocus(0, .55f, .50f, game.width, game.height),
+                    CropFocus(1000, .80f, .54f, game.width, game.height))
+            )
+            assertPanels(output)
+        } finally {
+            directory.deleteRecursively()
+        }
+        Unit
+    }
+
+    @Test
     fun acceptsStableBoundsAndRejectsCompetingCorners() {
         val face = StreamRegion(0.10f, 0.10f, 0.18f, 0.23f)
         val competitor = StreamRegion(0.82f, 0.10f, 0.90f, 0.23f)

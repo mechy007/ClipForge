@@ -16,7 +16,9 @@ internal class DownloadClipSelections(private val preferences: SharedPreferences
 
     fun add(clip: ClipCandidate) {
         val records = JSONArray()
-        val retained = (selected() + clip).distinctBy { it.startMs to it.endMs }.takeLast(10)
+        val retained = (selected().filterNot {
+            HighlightDetector.overlapOfShorter(it.startMs, it.endMs, clip.startMs, clip.endMs) > .65
+        } + clip).takeLast(10)
         retained.forEach {
             records.put(JSONObject().put("start", it.startMs).put("end", it.endMs)
                 .put("title", it.title).put("hook", it.hook).put("score", it.score))
