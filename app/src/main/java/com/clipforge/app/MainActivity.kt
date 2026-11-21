@@ -315,6 +315,42 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     }
     var localImportBusy by remember { mutableStateOf(false) }
     var localImportStatus by remember { mutableStateOf("") }
+    // Observe the unique work independently of the picker callback. This also
+    // restores progress/results when Android recreates the activity.
+    LaunchedEffect(context) {
+        androidx.work.WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWorkFlow("clipforge-offline-import").collect { jobs ->
+                val info = jobs.lastOrNull() ?: return@collect
+                when (info.state) {
+                    androidx.work.WorkInfo.State.RUNNING, androidx.work.WorkInfo.State.ENQUEUED,
+                    androidx.work.WorkInfo.State.BLOCKED -> {
+                        localImportBusy = true
+                        val percent = info.progress.getInt(BackgroundVideoImportWorker.PROGRESS, -1)
+                        localImportStatus = if (percent >= 0) "Importing video · $percent%" else "Importing video in background…"
+                    }
+                    androidx.work.WorkInfo.State.SUCCEEDED -> {
+                        val result = info.outputData.getString(BackgroundVideoImportWorker.RESULT_URI)
+                        if (result != null && video?.toString() != result) {
+                            video = Uri.parse(result)
+                            duration = 0L
+                            clips = emptyList()
+                            transcriptSegments = emptyList()
+                            activeProjectId = null
+                            editing = null
+                            message = "Offline video imported. Ready for resumable AI transcription."
+                            activeSection = "Editor"
+                        }
+                        localImportStatus = "Offline video imported successfully."
+                        localImportBusy = false
+                    }
+                    androidx.work.WorkInfo.State.FAILED, androidx.work.WorkInfo.State.CANCELLED -> {
+                        localImportStatus = info.outputData.getString(BackgroundVideoImportWorker.ERROR)
+                            ?: "Background import stopped."
+                        localImportBusy = false
+                    }
+                }
+            }
+    }
     val offlineImportPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && !localImportBusy) {
             runCatching {
@@ -327,38 +363,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                 .build()
             val manager = androidx.work.WorkManager.getInstance(context)
             manager.enqueueUniqueWork("clipforge-offline-import", androidx.work.ExistingWorkPolicy.REPLACE, request)
-            scope.launch {
-                manager.getWorkInfoByIdFlow(request.id).collect { info ->
-                    if (info == null) return@collect
-                    when (info.state) {
-                        androidx.work.WorkInfo.State.RUNNING, androidx.work.WorkInfo.State.ENQUEUED -> {
-                            val percent = info.progress.getInt(BackgroundVideoImportWorker.PROGRESS, -1)
-                            localImportStatus = if (percent >= 0) "Importing video · $percent%" else "Importing video in background…"
-                        }
-                        androidx.work.WorkInfo.State.SUCCEEDED -> {
-                            val result = info.outputData.getString(BackgroundVideoImportWorker.RESULT_URI)
-                            if (result != null) {
-                                video = Uri.parse(result)
-                                duration = 0L
-                                clips = emptyList()
-                                transcriptSegments = emptyList()
-                                activeProjectId = null
-                                editing = null
-                                message = "Offline video imported. Ready for resumable AI transcription."
-                                localImportStatus = "Offline video imported successfully."
-                                activeSection = "Editor"
-                            }
-                            localImportBusy = false
-                        }
-                        androidx.work.WorkInfo.State.FAILED, androidx.work.WorkInfo.State.CANCELLED -> {
-                            localImportStatus = info.outputData.getString(BackgroundVideoImportWorker.ERROR)
-                                ?: "Background import stopped."
-                            localImportBusy = false
-                        }
-                        else -> Unit
-                    }
-                }
-            }
+
         }
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { dest ->
