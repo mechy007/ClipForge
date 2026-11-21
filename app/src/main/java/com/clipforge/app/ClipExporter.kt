@@ -140,6 +140,7 @@ object ClipExporter {
         endMs: Long,
         aspectRatio: Float = 9f / 16f,
         faceTrackingPath: List<CropFocus> = emptyList(),
+        splitFacecamRegion: StreamRegion? = null,
         captionCues: List<CaptionCue> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         onStatus: (String) -> Unit,
@@ -147,6 +148,26 @@ object ClipExporter {
     ) {
         if (startMs < 0L || endMs <= startMs) {
             onFinished(false, "Choose a valid trim range.")
+            return
+        }
+
+        if (splitFacecamRegion != null) {
+            if (aspectRatio !in 0.55f..0.58f) {
+                onFinished(false, "Streamer/gameplay split is only available in 9:16.")
+                return
+            }
+            val output = File(context.cacheDir, "clipforge_split_${System.nanoTime()}.mp4")
+            mainHandler.post { onStatus("Rendering streamer/gameplay split…") }
+            StreamerGameplayRenderer.render(
+                context, source, output, startMs, endMs, splitFacecamRegion
+            ) { success, detail ->
+                if (!success) {
+                    output.delete()
+                    mainHandler.post { onFinished(false, "Split export failed: $detail") }
+                } else {
+                    finishRendered(context, output, destination, captionCues, captionPreset, onStatus, onFinished)
+                }
+            }
             return
         }
 

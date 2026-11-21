@@ -21,9 +21,16 @@ object BatchClipExporter {
         transcript: List<TranscriptSegment> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
         faceTrackingPath: List<CropFocus> = emptyList(),
+        splitFacecamRegion: StreamRegion? = null,
         onProgress: (Int, Int, ClipCandidate) -> Unit = { _, _, _ -> }
     ): Int {
         require(clips.isNotEmpty()) { "No highlights were selected." }
+        require(clips.all { it.startMs >= 0L && it.endMs > it.startMs }) {
+            "All selected highlights must have valid start and end times."
+        }
+        require(clips.distinctBy { it.startMs to it.endMs }.size == clips.size) {
+            "Duplicate highlight ranges would overwrite exported MP4 filenames."
+        }
         val resolver = context.contentResolver
         val treeDocumentId = DocumentsContract.getTreeDocumentId(folder)
         val parentDocument = DocumentsContract.buildDocumentUriUsingTree(folder, treeDocumentId)
@@ -51,8 +58,8 @@ object BatchClipExporter {
                 else -> "1x1"
             }
             val name = String.format(
-                Locale.US, "ClipForge_%s_%ds-%ds_%s.mp4",
-                ratioTag, clip.startMs / 1000L, clip.endMs / 1000L, safeTitle
+                Locale.US, "ClipForge_%s_%dms-%dms_%s.mp4",
+                ratioTag, clip.startMs, clip.endMs, safeTitle
             )
             val destination = withContext(Dispatchers.IO) {
                 DocumentsContract.createDocument(resolver, parentDocument, "video/mp4", name)
@@ -63,6 +70,7 @@ object BatchClipExporter {
                     context, exportSource, destination, clip.startMs, clip.endMs,
                     aspectRatio = aspectRatio,
                     faceTrackingPath = faceTrackingPath,
+                    splitFacecamRegion = splitFacecamRegion,
                     captionCues = if (transcript.isEmpty()) emptyList() else CaptionTrack.fromTranscript(transcript, clip.startMs, clip.endMs),
                     captionPreset = captionPreset,
                     onStatus = { },

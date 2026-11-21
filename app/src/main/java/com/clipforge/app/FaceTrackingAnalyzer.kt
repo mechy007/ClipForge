@@ -8,6 +8,8 @@ import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -42,9 +44,10 @@ object FaceTrackingAnalyzer {
             val step = maxOf(1_500L, duration / 120L)
             var offset = 0L
             while (offset < duration) {
+                currentCoroutineContext().ensureActive()
                 val original = retriever.getFrameAtTime(
                     (startMs + offset) * 1_000L,
-                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    MediaMetadataRetriever.OPTION_CLOSEST
                 )
                 if (original != null) {
                     val scale = minOf(1f, 640f / maxOf(original.width, original.height))

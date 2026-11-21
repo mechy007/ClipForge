@@ -30,7 +30,17 @@ object BatchExportCoordinator {
     val status = mutableStatus.asStateFlow()
     // Retain verified outputs across changed selections during an interrupted batch.
     // This is process-local, just like the coordinator's status.
-    private val verifiedBatchClips = linkedSetOf<ClipCandidate>()
+    private val verifiedBatchRanges = linkedSetOf<Pair<Long, Long>>()
+    private var verifiedSettings: ExportSettings? = null
+
+    private data class ExportSettings(
+        val source: String,
+        val folder: String,
+        val aspectRatio: Float,
+        val transcript: List<TranscriptSegment>,
+        val captionPreset: CaptionPreset,
+        val faceTrackingPath: List<CropFocus>
+    )
 
     fun start(
         context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>,
@@ -42,16 +52,23 @@ object BatchExportCoordinator {
         val previous = mutableStatus.value
         if (previous.running) return
 
+        val settings = ExportSettings(
+            source.toString(), folder.toString(), aspectRatio,
+            transcript.toList(), captionPreset, faceTrackingPath.toList()
+        )
         val retryingInterruptedBatch = previous.message.startsWith("Batch export stopped:")
-        val sameBatch = retryingInterruptedBatch &&
-            previous.sourceUri == source.toString() &&
-            previous.folderUri == folder.toString() && previous.aspectRatio == aspectRatio
+        // Never reuse outputs after the user changes captions or crop tracking.
+        val sameBatch = retryingInterruptedBatch && verifiedSettings == settings
         // A retry may use a different selection: only count previously exported clips
         // that are still selected, and never count a duplicate more than once.
-        val selectedClips = clips.distinct()
-        if (!sameBatch) verifiedBatchClips.clear()
-        val alreadyCompleted = if (sameBatch) verifiedBatchClips.filter { it in selectedClips } else emptyList()
-        val remaining = selectedClips.filterNot { it in alreadyCompleted }
+        val selectedClips = clips.toList()
+        require(selectedClips.distinctBy { it.startMs to it.endMs }.size == selectedClips.size) {
+            "Duplicate highlight ranges cannot be exported in the same batch."
+        }
+        if (!sameBatch) verifiedBatchRanges.clear()
+        verifiedSettings = settings
+        val alreadyCompleted = if (sameBatch) selectedClips.filter { (it.startMs to it.endMs) in verifiedBatchRanges } else emptyList()
+        val remaining = selectedClips.filterNot { (it.startMs to it.endMs) in verifiedBatchRanges }
         if (remaining.isEmpty()) {
             mutableStatus.value = previous.copy(
                 running = false,
@@ -78,8 +95,8 @@ object BatchExportCoordinator {
         scope.launch {
             try {
                 BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset, faceTrackingPath) { done, _, clip ->
-                    verifiedBatchClips.addAll(remaining.take(done))
-                    val verifiedClips = selectedClips.filter { it in verifiedBatchClips }
+                    verifiedBatchRanges.add(clip.startMs to clip.endMs)
+                    val verifiedClips = selectedClips.filter { (it.startMs to it.endMs) in verifiedBatchRanges }
                     mutableStatus.value = BatchExportStatus(
                         running = true,
                         completed = verifiedClips.size,

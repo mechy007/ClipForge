@@ -157,6 +157,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
     var exportMessage by remember { mutableStateOf("") }
     var exportAspectRatio by rememberSaveable { mutableFloatStateOf(9f / 16f) }
     var exportAspectLabel by rememberSaveable { mutableStateOf("9:16 Shorts") }
+    var verticalLayoutChoice by rememberSaveable { mutableStateOf<String?>(null) }
     var previewRetryKey by remember(video) { mutableIntStateOf(0) }
     var previewError by remember(video) { mutableStateOf<String?>(null) }
     var videoDisplayName by remember(video) { mutableStateOf("") }
@@ -599,6 +600,48 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }, enabled = linkText.isNotBlank() && !importingLink && !analyzing, modifier = Modifier.fillMaxWidth()) {
                 Text(if (importingLink) "Importing video…" else if (youtubeLink) "Download and clip" else "Import from direct link")
             }
+            if (youtubeLink) {
+                OutlinedButton(
+                    onClick = {
+                        val url = linkText.trim()
+                        importingLink = true
+                        scope.launch {
+                            try {
+                                linkStatus = "Reading recording duration…"
+                                val recordingMs = YouTubeDurationProbe.durationMs(context, url)
+                                val results = DownloadWhileAnalyzing.runYouTubeSections(
+                                    context = context,
+                                    url = url,
+                                    height = youtubeQuality,
+                                    durationMs = recordingMs,
+                                    stateDirectory = java.io.File(context.filesDir, "progressive-analysis"),
+                                    language = transcriptLanguage.takeUnless { it == "auto" },
+                                    onStatus = { status -> linkStatus = "AI analysis · $status" },
+                                    onDownloadProgress = { completed, total ->
+                                        linkStatus = "Sections downloaded: $completed / $total · analyzing concurrently"
+                                    }
+                                )
+                                clips = results
+                                selectedClips = results.toSet()
+                                duration = recordingMs
+                                linkStatus = "Analyzed ${results.size} highlights. Import the complete video before preview/export."
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                linkStatus = "Progressive analysis unavailable: ${e.localizedMessage ?: "Try standard download."}"
+                            } finally {
+                                importingLink = false
+                            }
+                        }
+                    },
+                    enabled = !importingLink && !analyzing && linkText.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Analyze during download (experimental)") }
+                Text(
+                    "Downloads playable sections and analyzes them concurrently. A full original video is still required for final clip export.",
+                    color = Muted, fontSize = 11.sp
+                )
+            }
             if (linkStatus.isNotBlank()) Text(linkStatus, color = Muted, fontSize = 11.sp)
             }
             if (activeSection == "Projects") {
@@ -837,6 +880,28 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     }
                 }
                 Text("For long recordings, choose up to 100 candidates. Actual results depend on available speech and distinct moments.", color = Muted, fontSize = 11.sp)
+                if (exportAspectRatio < 0.8f) {
+                    Text("CHOOSE YOUR 9:16 CLIP LAYOUT", color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Choose a layout before finding highlights. Other aspect ratios use their normal layout.", color = Muted, fontSize = 11.sp)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(
+                            selected = verticalLayoutChoice == "standard",
+                            onClick = { verticalLayoutChoice = "standard" },
+                            enabled = !analyzing,
+                            label = { Text("Standard · smart gameplay crop") }
+                        )
+                        FilterChip(
+                            selected = verticalLayoutChoice == "split",
+                            onClick = { verticalLayoutChoice = "split" },
+                            enabled = !analyzing,
+                            label = { Text("50/50 · streamer on top, gameplay below") }
+                        )
+                    }
+                    if (verticalLayoutChoice == "split") {
+                        Text("Split-screen rendering is in development; selecting it records your preference but export is not available yet.", color = Muted, fontSize = 11.sp)
+                    }
+                }
+
                 Button(onClick = {
                     val src = video ?: return@Button
                     scope.launch {
@@ -858,9 +923,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             })
                             val transcript = analysis.segments
                             transcriptSegments = transcript
-                            message = "Detecting scene changes…"
-                            val sceneCuts = SceneChangeAnalyzer.analyze(context, src, duration)
-                            message = "Tracking faces for automatic vertical framing…"
+                            message = "Analyzing video motion and scene changes offline…"
+                            val visualSignals = VisualUnderstandingEngine.analyze(context, src, duration)
+                            val sceneCuts = visualSignals.sceneCuts
+                            message = "Tracking faces automatically for vertical framing…"
                             faceTrackingPath = FaceTrackingAnalyzer.analyze(context, src, 0L, duration, exportAspectRatio)
                             faceTrackingMessage = if (faceTrackingPath.isEmpty()) {
                                 "No faces detected. Exports will use a centered crop."
@@ -869,7 +935,26 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                             message = "Ranking speech, silence and scene changes…"
                             val found = withContext(Dispatchers.Default) {
-                                HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights)
+                                run {
+                                    val speechRanked = VisualHighlightReranker.rerank(
+                                        HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights),
+                                        visualSignals
+                                    )
+                                    val visualRanked = VisualOnlyHighlightDetector.detect(
+                                        visualSignals, duration, targetClipDurationMs, maxHighlights
+                                    )
+                                    val combined = speechRanked.toMutableList()
+                                    for (candidate in visualRanked) {
+                                        if (combined.size >= maxHighlights) break
+                                        if (combined.none { existing ->
+                                                HighlightDetector.overlapOfShorter(
+                                                    candidate.startMs, candidate.endMs,
+                                                    existing.startMs, existing.endMs
+                                                ) > 0.65
+                                            }) combined += candidate
+                                    }
+                                    ReactionSignalFusion.rerank(combined, visualSignals, analysis.audioEnergy).take(maxHighlights)
+                                }
                             }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
@@ -888,12 +973,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             clips = found
                             selectedClips = found.toSet()
                             if (found.isNotEmpty()) activeSection = "Highlights"
-                            message = if (found.isEmpty()) "No clear speech highlights found. Try a video with spoken audio."
+                            message = if (found.isEmpty()) "No clear highlights detected. Try a longer video with visible action."
                                 else "Analysis complete · ${found.size} clips ranked"
                         } catch (e: Exception) { message = e.localizedMessage ?: "Analysis failed. Try again." }
                         finally { analyzing = false }
                     }
-                }, enabled = ready && !analyzing && duration > 0L, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                }, enabled = ready && !analyzing && duration > 0L && (exportAspectRatio >= 0.8f || verticalLayoutChoice != null), modifier = Modifier.fillMaxWidth().height(54.dp)) {
                     Icon(Icons.Default.AutoAwesome, null)
                     Text(if (analyzing) "  Analyzing video…" else "  Find my best clips")
                 }
