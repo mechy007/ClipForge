@@ -870,7 +870,10 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             }
                             message = "Ranking speech, silence and scene changes…"
                             val found = withContext(Dispatchers.Default) {
-                                HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights)
+                                VisualHighlightReranker.rerank(
+                                    HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights),
+                                    visualSignals
+                                )
                             }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
