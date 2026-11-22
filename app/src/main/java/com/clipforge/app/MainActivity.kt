@@ -331,7 +331,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     androidx.work.WorkInfo.State.BLOCKED -> {
                         localImportBusy = true
                         val percent = info.progress.getInt(BackgroundVideoImportWorker.PROGRESS, -1)
-                        localImportStatus = if (percent >= 0) "Importing video · $percent%" else "Importing video in background…"
+                        localImportStatus = if (percent >= 0) "Importing video · $percent%" else "Importing video · ${info.progress.getLong(BackgroundVideoImportWorker.COPIED_BYTES, 0L) / 1_048_576L} MB copied"
                     }
                     androidx.work.WorkInfo.State.SUCCEEDED -> {
                         val result = info.outputData.getString(BackgroundVideoImportWorker.RESULT_URI)
