@@ -18,7 +18,8 @@ import java.io.File
  */
 data class TranscriptionResult(
     val segments: List<TranscriptSegment>,
-    val audioEnergy: List<AudioEnergyWindow>
+    val audioEnergy: List<AudioEnergyWindow>,
+    val audioEvents: List<AudioEventWindow> = emptyList()
 )
 
 object VideoTranscriber {
@@ -49,6 +50,7 @@ object VideoTranscriber {
             AudioPcmExtractor.decodeToMono16Khz(context, videoUri, pcmFile) { window ->
                 audioEnergy += window
             }
+            val audioEvents = AudioEventClassifier.analyze(context, pcmFile, onStatus)
 
             check(pcmFile.isFile && pcmFile.length() > 0L && pcmFile.length() % Float.SIZE_BYTES == 0L) {
                 "Decoded audio is empty or contains an incomplete PCM sample"
@@ -95,7 +97,8 @@ object VideoTranscriber {
 
             TranscriptionResult(
                 segments = checkpoint.segments(),
-                audioEnergy = audioEnergy
+                audioEnergy = audioEnergy,
+                audioEvents = audioEvents
             )
         } finally {
             try {

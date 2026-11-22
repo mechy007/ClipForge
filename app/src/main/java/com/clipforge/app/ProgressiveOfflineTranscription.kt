@@ -7,7 +7,8 @@ import android.net.Uri
 internal data class ProgressiveTranscriptionSignals(
     val segment: ProgressiveSegment,
     val transcript: List<TranscriptSegment>,
-    val audioEnergy: List<AudioEnergyWindow>
+    val audioEnergy: List<AudioEnergyWindow>,
+    val audioEvents: List<AudioEventWindow> = emptyList()
 )
 
 /**
@@ -55,7 +56,18 @@ internal object ProgressiveOfflineTranscription {
                     endMs = Math.addExact(item.endMs, span.startMs)
                 )
             }
-            onSegmentTranscribed(ProgressiveTranscriptionSignals(span, transcript, energy))
+            val events = result.audioEvents.map { item ->
+                require(item.startMs >= 0 && item.endMs > item.startMs && item.endMs <= span.endMs - span.startMs &&
+                    item.laughter.isFinite() && item.shouting.isFinite() && item.cheering.isFinite() &&
+                    item.laughter in 0f..1f && item.shouting in 0f..1f && item.cheering in 0f..1f) {
+                    "Audio-event timestamps or values are invalid"
+                }
+                item.copy(
+                    startMs = Math.addExact(item.startMs, span.startMs),
+                    endMs = Math.addExact(item.endMs, span.startMs)
+                )
+            }
+            onSegmentTranscribed(ProgressiveTranscriptionSignals(span, transcript, energy, events))
         }
     }
 }

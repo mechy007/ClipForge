@@ -19,6 +19,11 @@ internal object ProgressiveSignalIntegration {
             it.startMs >= span.startMs && it.endMs > it.startMs && it.endMs <= span.endMs &&
                 it.rms.isFinite() && it.peak.isFinite() && it.rms >= 0f && it.peak >= 0f
         })
+        require(result.audioEvents.all {
+            it.startMs >= span.startMs && it.endMs > it.startMs && it.endMs <= span.endMs &&
+                it.laughter.isFinite() && it.shouting.isFinite() && it.cheering.isFinite() &&
+                it.laughter in 0f..1f && it.shouting in 0f..1f && it.cheering in 0f..1f
+        })
         val words = JSONArray()
         result.transcript.forEach {
             words.put(JSONObject().put("startMs", it.startMs).put("endMs", it.endMs).put("text", it.text))
@@ -28,17 +33,28 @@ internal object ProgressiveSignalIntegration {
             energy.put(JSONObject().put("startMs", it.startMs).put("endMs", it.endMs)
                 .put("rms", it.rms.toDouble()).put("peak", it.peak.toDouble()))
         }
+        val events = JSONArray()
+        result.audioEvents.forEach {
+            events.put(JSONObject().put("startMs", it.startMs).put("endMs", it.endMs)
+                .put("laughter", it.laughter.toDouble()).put("shouting", it.shouting.toDouble())
+                .put("cheering", it.cheering.toDouble()))
+        }
         store.write(span.index, JSONObject()
             .put("startMs", span.startMs).put("endMs", span.endMs)
-            .put("transcript", words).put("audioEnergy", energy))
+            .put("transcript", words).put("audioEnergy", energy).put("audioEvents", events))
     }
 
-    data class Signals(val transcript: List<TranscriptSegment>, val audioEnergy: List<AudioEnergyWindow>)
+    data class Signals(
+        val transcript: List<TranscriptSegment>,
+        val audioEnergy: List<AudioEnergyWindow>,
+        val audioEvents: List<AudioEventWindow> = emptyList()
+    )
 
     /** Fail closed: missing/corrupt snapshots must never silently produce partial highlights. */
     fun restore(store: ProgressiveSignalStore, processedIndices: Set<Int>): Signals {
         val transcript = mutableListOf<TranscriptSegment>()
         val energy = mutableListOf<AudioEnergyWindow>()
+        val audioEvents = mutableListOf<AudioEventWindow>()
         for (index in processedIndices.sorted()) {
             require(index >= 0)
             val data = requireNotNull(store.read(index)) { "Missing signal snapshot for segment $index" }
@@ -65,8 +81,21 @@ internal object ProgressiveSignalIntegration {
                     rms.toFloat().isFinite() && peak.toFloat().isFinite())
                 energy += AudioEnergyWindow(a, b, rms.toFloat(), peak.toFloat())
             }
+            val events = if (data.has("audioEvents")) data.getJSONArray("audioEvents") else JSONArray()
+            for (i in 0 until events.length()) {
+                val item = events.getJSONObject(i)
+                val a = item.getLong("startMs")
+                val b = item.getLong("endMs")
+                val laughter = item.getDouble("laughter")
+                val shouting = item.getDouble("shouting")
+                val cheering = item.getDouble("cheering")
+                require(a >= start && b > a && b <= end &&
+                    laughter.isFinite() && shouting.isFinite() && cheering.isFinite() &&
+                    laughter in 0.0..1.0 && shouting in 0.0..1.0 && cheering in 0.0..1.0)
+                audioEvents += AudioEventWindow(a, b, laughter.toFloat(), shouting.toFloat(), cheering.toFloat())
+            }
         }
-        return Signals(transcript.sortedBy { it.startMs }, energy.sortedBy { it.startMs })
+        return Signals(transcript.sortedBy { it.startMs }, energy.sortedBy { it.startMs }, audioEvents.sortedBy { it.startMs })
     }
 
     fun detect(
@@ -79,7 +108,9 @@ internal object ProgressiveSignalIntegration {
         val signals = restore(store, processedIndices)
         return HighlightDetector.detect(
             signals.transcript, durationMs,
-            audioEnergy = signals.audioEnergy, maxClips = maxClips
+            audioEnergy = signals.audioEnergy,
+            maxClips = maxClips,
+            audioEvents = signals.audioEvents
         )
     }
 }

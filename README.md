@@ -10,6 +10,7 @@ ClipForge is an Android-first, local-first video clipping app. It imports local 
 - Bundle the multilingual Whisper tiny model inside the APK; install it into app-private storage on first launch and verify its size and SHA-256. No in-app model download is required.
 - Load the native Whisper model once per video transcription session and reuse the context across 30-second chunks, then release it when transcription finishes.
 - Decode a video's audio track locally to mono 16 kHz float PCM.
+- Analyze audio offline with a bundled, SHA-256-verified YAMNet model to detect laughter, shouting and cheering; combine meaningful reaction signals with transcript and audio-energy scores when ranking clips.
 - Transcribe audio in bounded 30-second chunks and retain timestamped transcript segments.
 - Choose automatic language detection or explicitly select English, Malayalam, Hindi, Tamil, Telugu, Kannada, Bengali, Urdu or Arabic for on-device transcription.
 - Detect candidate 30-second highlights using offline transcript signals (speech density, hook words, punctuation and vocabulary variety).
@@ -38,7 +39,7 @@ ClipForge studies three MIT-licensed open-source projects for useful clipping te
 - Minimum Android SDK 26
 
 ## Privacy and storage
-The Whisper model is fetched and SHA-256-verified during the APK build, packaged as an uncompressed app asset, then copied locally into app-private storage on first launch. The app performs no model network download at runtime. Temporary decoded PCM is written to the app cache and deleted after transcription. The app does not upload the selected video or its audio.
+The Whisper and YAMNet models are fetched and SHA-256-verified during the APK build, packaged as uncompressed app assets, then copied locally into app-private storage as needed. The app performs no model network download at runtime. Temporary decoded PCM is written to the app cache and deleted after analysis. The app does not upload the selected video or its audio.
 
 ## Current limitations
 - The project library currently persists project metadata and highlight records; full editing-session restoration and export-history UI are still being developed. Batch export progress survives Activity recreation but is not yet recoverable after Android terminates the app process.

@@ -860,9 +860,12 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                             } else {
                                 "Face-aware framing ready · ${faceTrackingPath.size} tracked moments."
                             }
-                            message = "Ranking speech, silence and scene changes…"
+                            message = "Ranking speech, sound reactions and scene changes…"
                             val found = withContext(Dispatchers.Default) {
-                                HighlightDetector.detect(transcript, duration, targetClipDurationMs, analysis.audioEnergy, sceneCuts, maxHighlights)
+                                HighlightDetector.detect(
+                                    transcript, duration, targetClipDurationMs, analysis.audioEnergy,
+                                    sceneCuts, maxHighlights, analysis.audioEvents
+                                )
                             }
                             val existingProjectId = activeProjectId
                             val persisted = withContext(Dispatchers.IO) {
