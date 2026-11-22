@@ -59,6 +59,7 @@ object AudioEventClassifier {
         val chunkSamples = SAMPLE_RATE * CHUNK_SECONDS
         try {
             DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
+                var chunkIndex = 0
                 var overlap = FloatArray(0)
                 var inputDone = false
                 var samplesReadFromFile = 0L
@@ -96,6 +97,7 @@ object AudioEventClassifier {
                     }
                     overlap = if (inputDone) FloatArray(0)
                     else audio.copyOfRange((count - MIN_MODEL_SAMPLES).coerceAtLeast(0), count)
+                    chunkIndex++
                 }
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
