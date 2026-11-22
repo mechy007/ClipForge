@@ -107,4 +107,23 @@ class VisualUnderstandingEngineTest {
         assertEquals(1, clips.size)
     }
 
+    @Test fun longSilentRecordingStillFindsLocalizedAction() {
+        // Match the production 7.5-second upper sampling interval on a two-hour source.
+        // Quiet portions must not suppress a short but clearly active segment.
+        val duration = 2L * 60L * 60L * 1000L
+        val actionStart = 87L * 60L * 1000L
+        val frames = (0L..(duration / 7_500L)).map { sample ->
+            val time = sample * 7_500L
+            val active = time in actionStart until actionStart + 45_000L
+            VisualActivity(time, if (active) 0.48f else 0.005f, active && time == actionStart)
+        }
+        val clips = VisualOnlyHighlightDetector.detect(
+            VisualUnderstandingResult(frames), duration, 30_000L, 10
+        )
+        assertTrue(clips.isNotEmpty())
+        assertTrue(clips.any { it.startMs < actionStart + 45_000L && it.endMs > actionStart })
+        assertTrue(clips.all { it.startMs >= 0L && it.endMs <= duration })
+    }
+
+
 }
