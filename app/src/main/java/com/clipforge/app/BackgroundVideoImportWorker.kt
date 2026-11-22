@@ -24,6 +24,7 @@ class BackgroundVideoImportWorker(context: Context, params: WorkerParameters) : 
         const val RESULT_URI = "result_uri"
         const val ERROR = "error"
         const val PROGRESS = "progress"
+        const val COPIED_BYTES = "copied_bytes"
         private const val CHANNEL = "clipforge_imports"
         private const val NOTIFICATION_ID = 4301
     }
@@ -34,15 +35,29 @@ class BackgroundVideoImportWorker(context: Context, params: WorkerParameters) : 
         )
         return try {
             setForeground(notification("Importing video", -1))
-            var lastPercent = -1
+            // Throttle progress updates: sending a foreground-service request for
+            // every 256 KiB block can overwhelm WorkManager on multi-GB imports.
+            var lastPercent = -2
+            var lastReportedBytes = 0L
+            var lastReportAt = 0L
             val imported = LocalVideoImporter.import(applicationContext, Uri.parse(source)) { p ->
                 val percent = p.totalBytes?.takeIf { it > 0L }
                     ?.let { ((p.copiedBytes * 100L) / it).toInt().coerceIn(0, 100) }
                     ?: -1
-                if (percent != lastPercent) {
+                val now = android.os.SystemClock.elapsedRealtime()
+                val finished = p.totalBytes != null && p.copiedBytes >= p.totalBytes
+                val first = lastPercent == -2
+                val due = now - lastReportAt >= 1000L
+                val significantBytes = p.copiedBytes - lastReportedBytes >= 4L * 1024 * 1024
+                if (first || finished || (due && (percent != lastPercent || significantBytes))) {
                     lastPercent = percent
-                    setProgressAsync(Data.Builder().putInt(PROGRESS, percent).build())
-                    setForegroundAsync(notification("Importing video", percent))
+                    lastReportedBytes = p.copiedBytes
+                    lastReportAt = now
+                    setProgressAsync(Data.Builder()
+                        .putInt(PROGRESS, percent)
+                        .putLong(COPIED_BYTES, p.copiedBytes)
+                        .build())
+                    setForegroundAsync(notification("Importing video", percent, p.copiedBytes))
                 }
             }
             Result.success(Data.Builder().putString(RESULT_URI, imported.toString()).build())
@@ -53,7 +68,7 @@ class BackgroundVideoImportWorker(context: Context, params: WorkerParameters) : 
         }
     }
 
-    private fun notification(title: String, progress: Int): ForegroundInfo {
+    private fun notification(title: String, progress: Int, copiedBytes: Long = 0L): ForegroundInfo {
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "Video imports", NotificationManager.IMPORTANCE_LOW))
@@ -67,7 +82,7 @@ class BackgroundVideoImportWorker(context: Context, params: WorkerParameters) : 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)
-            .setContentText(if (progress >= 0) "$progress% copied" else "Copying to offline storage")
+            .setContentText(if (progress >= 0) "$progress% copied" else "${copiedBytes / 1_048_576L} MB copied")
             .setProgress(100, progress.coerceAtLeast(0), progress < 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
