@@ -10,6 +10,12 @@ data class TranscriptSegment(
     val text: String,
     val words: List<TimedWord> = emptyList()
 ) {
+    internal fun withCompleteWordTiming(timing: List<TimedWord>): TranscriptSegment {
+        val complete = timing.joinToString(" ") { it.word } == text.trim().replace(Regex("\\s+"), " ") &&
+            timing.zipWithNext().all { (first, second) -> first.startMs < second.startMs }
+        return copy(words = if (complete) timing else emptyList())
+    }
+
     fun shiftedBy(offsetMs: Long) = copy(
         startMs = Math.addExact(startMs, offsetMs),
         endMs = Math.addExact(endMs, offsetMs),
@@ -74,9 +80,7 @@ object WhisperEngine {
         rows.mapNotNull { row ->
             val segment = row.firstOrNull()?.let(::parse) ?: return@mapNotNull null
             val words = row.drop(1).mapNotNull(::parse)
-            val complete = words.joinToString(" ") { it.word } ==
-                segment.word.replace(Regex("\\s+"), " ")
-            TranscriptSegment(segment.startMs, segment.endMs, segment.word, if (complete) words else emptyList())
+            TranscriptSegment(segment.startMs, segment.endMs, segment.word).withCompleteWordTiming(words)
         }
     }
 }
