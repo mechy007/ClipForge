@@ -57,17 +57,24 @@ object AudioEventClassifier {
         try {
             DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
                 var chunkIndex = 0
+                var overlap = FloatArray(0)
+                var inputDone = false
                 while (true) {
                     currentCoroutineContext().ensureActive()
-                    val audio = FloatArray(chunkSamples)
-                    var count = 0
-                    while (count < audio.size) {
-                        val sample = try { input.readFloat() } catch (_: java.io.EOFException) { break }
+                    val audio = FloatArray(chunkSamples + MIN_MODEL_SAMPLES)
+                    overlap.copyInto(audio)
+                    var count = overlap.size
+                    val targetCount = minOf(audio.size, overlap.size + chunkSamples)
+                    while (count < targetCount) {
+                        val sample = try { input.readFloat() } catch (_: java.io.EOFException) {
+                            inputDone = true
+                            break
+                        }
                         audio[count++] = sample.coerceIn(-1f, 1f)
                     }
-                    if (count == 0) break
+                    if (count == overlap.size && inputDone) break
                     val actual = when {
-                        count >= MIN_MODEL_SAMPLES -> if (count == audio.size) audio else audio.copyOf(count)
+                        count >= MIN_MODEL_SAMPLES -> audio.copyOf(count)
                         else -> audio.copyOf(MIN_MODEL_SAMPLES)
                     }
                     onStatus("Checking audio reactions · segment ${chunkIndex + 1}")
@@ -82,6 +89,8 @@ object AudioEventClassifier {
                             target[2] = maxOf(target[2], maxClassScore(scores, cheeringClasses))
                         }
                     }
+                    overlap = if (inputDone) FloatArray(0)
+                    else audio.copyOfRange((count - MIN_MODEL_SAMPLES).coerceAtLeast(0), count)
                     chunkIndex++
                 }
             }
