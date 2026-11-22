@@ -22,4 +22,11 @@ class AudioEventScorerTest {
         assertNull(AudioEventScorer.score(0, 900, events))
         assertNull(AudioEventScorer.score(1_000, 2_000, events))
     }
+
+    @Test
+    fun allowsStrongCheeringToContributeOnItsOwn() {
+        val events = listOf(AudioEventWindow(0, 1_000, 0f, 0f, 0.8f))
+
+        assertEquals(12, AudioEventScorer.score(0, 1_000, events))
+    }
 }

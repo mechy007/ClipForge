@@ -81,7 +81,7 @@ internal object ProgressiveSignalIntegration {
                     rms.toFloat().isFinite() && peak.toFloat().isFinite())
                 energy += AudioEnergyWindow(a, b, rms.toFloat(), peak.toFloat())
             }
-            val events = data.optJSONArray("audioEvents") ?: JSONArray()
+            val events = if (data.has("audioEvents")) data.getJSONArray("audioEvents") else JSONArray()
             for (i in 0 until events.length()) {
                 val item = events.getJSONObject(i)
                 val a = item.getLong("startMs")

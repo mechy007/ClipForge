@@ -49,6 +49,9 @@ object AudioEventClassifier {
         } catch (error: Exception) {
             onStatus("Sound-event model unavailable; continuing with speech and audio-energy analysis.")
             return@withContext emptyList()
+        } catch (error: LinkageError) {
+            onStatus("Sound-event model unavailable; continuing with speech and audio-energy analysis.")
+            return@withContext emptyList()
         }
         val durationMs = pcmFile.length() / Float.SIZE_BYTES * 1_000L / SAMPLE_RATE
         val windows = Array(((durationMs + 999L) / 1_000L).toInt().coerceAtLeast(1)) { FloatArray(3) }
@@ -56,11 +59,12 @@ object AudioEventClassifier {
         val chunkSamples = SAMPLE_RATE * CHUNK_SECONDS
         try {
             DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
-                var chunkIndex = 0
                 var overlap = FloatArray(0)
                 var inputDone = false
+                var samplesReadFromFile = 0L
                 while (true) {
                     currentCoroutineContext().ensureActive()
+                    val chunkOriginSamples = samplesReadFromFile - overlap.size
                     val audio = FloatArray(chunkSamples + MIN_MODEL_SAMPLES)
                     overlap.copyInto(audio)
                     var count = overlap.size
@@ -71,6 +75,7 @@ object AudioEventClassifier {
                             break
                         }
                         audio[count++] = sample.coerceIn(-1f, 1f)
+                        samplesReadFromFile++
                     }
                     if (count == overlap.size && inputDone) break
                     val actual = when {
@@ -79,9 +84,9 @@ object AudioEventClassifier {
                     }
                     onStatus("Checking audio reactions · segment ${chunkIndex + 1}")
                     val probabilities = infer(session, inputName, actual)
-                    val chunkStartSeconds = chunkIndex * CHUNK_SECONDS
                     probabilities.forEachIndexed { frame, scores ->
-                        val second = chunkStartSeconds + (frame * 0.48 + 0.48).toInt()
+                        val frameCenterSample = chunkOriginSamples + frame * 7_680L + 7_680L
+                        val second = (frameCenterSample / SAMPLE_RATE).toInt()
                         if (second in windows.indices) {
                             val target = windows[second]
                             target[0] = maxOf(target[0], maxClassScore(scores, laughterClasses))
@@ -91,12 +96,14 @@ object AudioEventClassifier {
                     }
                     overlap = if (inputDone) FloatArray(0)
                     else audio.copyOfRange((count - MIN_MODEL_SAMPLES).coerceAtLeast(0), count)
-                    chunkIndex++
                 }
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
+            onStatus("Sound-event analysis stopped; continuing with speech and audio-energy signals.")
+            return@withContext emptyList()
+        } catch (error: LinkageError) {
             onStatus("Sound-event analysis stopped; continuing with speech and audio-energy signals.")
             return@withContext emptyList()
         }
@@ -154,7 +161,7 @@ object AudioEventScorer {
         val shouting = relevant.maxOf { it.shouting.coerceIn(0f, 1f) }
         val cheering = relevant.maxOf { it.cheering.coerceIn(0f, 1f) }
         val score = ((laughter * 0.55f + shouting * 0.30f + cheering * 0.15f) * 100f).toInt()
-        return score.takeIf { it >= 20 }
+        return score.takeIf { it >= 20 || cheering >= 0.7f }
     }
 
     fun explanation(score: Int): String = when {
