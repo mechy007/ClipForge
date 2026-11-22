@@ -21,7 +21,7 @@ object LocalVideoImporter {
     suspend fun import(
         context: Context,
         source: Uri,
-        onProgress: (LocalImportProgress) -> Unit = {}
+        onProgress: suspend (LocalImportProgress) -> Unit = {}
     ): Uri = withContext(Dispatchers.IO) {
         require(source.scheme == "content") { "Choose a local video using the Android file picker." }
         val resolver = context.contentResolver
