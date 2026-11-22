@@ -77,8 +77,11 @@ object HighlightDetector {
         targetDurationMs: Long = DEFAULT_WINDOW_MS,
         audioEnergy: List<AudioEnergyWindow> = emptyList(),
         sceneCuts: List<Long> = emptyList(),
-        maxClips: Int = 10
-    ): List<ClipCandidate> = detectWithWeights(segments, durationMs, productionWeights, targetDurationMs, audioEnergy, sceneCuts, maxClips)
+        maxClips: Int = 10,
+        audioEvents: List<AudioEventWindow> = emptyList()
+    ): List<ClipCandidate> = detectWithWeights(
+        segments, durationMs, productionWeights, targetDurationMs, audioEnergy, sceneCuts, maxClips, audioEvents
+    )
 
     fun detectWithWeights(
         segments: List<TranscriptSegment>,
@@ -87,7 +90,8 @@ object HighlightDetector {
         targetDurationMs: Long = DEFAULT_WINDOW_MS,
         audioEnergy: List<AudioEnergyWindow> = emptyList(),
         sceneCuts: List<Long> = emptyList(),
-        maxClips: Int = 10
+        maxClips: Int = 10,
+        audioEvents: List<AudioEventWindow> = emptyList()
     ): List<ClipCandidate> {
         if (segments.isEmpty() || durationMs <= 0L) return emptyList()
         val sorted = segments.filter {
@@ -124,9 +128,18 @@ object HighlightDetector {
                     val audioScore = audioReference?.let { reference ->
                         AudioSignalScorer.score(clipStart, clipEnd, audioEnergy, reference.rms, reference.peak)
                     }
-                    val combinedScore = if (audioScore == null) transcriptScore
-                        else (transcriptScore * 0.82f + audioScore * 0.18f).toInt().coerceIn(0, 100)
+                    val eventScore = AudioEventScorer.score(clipStart, clipEnd, audioEvents)
+                    val combinedScore = when {
+                        eventScore != null && audioScore != null ->
+                            (transcriptScore * 0.72f + audioScore * 0.16f + eventScore * 0.12f).toInt().coerceIn(0, 100)
+                        eventScore != null ->
+                            (transcriptScore * 0.88f + eventScore * 0.12f).toInt().coerceIn(0, 100)
+                        audioScore != null ->
+                            (transcriptScore * 0.82f + audioScore * 0.18f).toInt().coerceIn(0, 100)
+                        else -> transcriptScore
+                    }
                     val audioReason = audioScore?.let { " Audio activity signal: $it/100." } ?: ""
+                    val eventReason = eventScore?.let(AudioEventScorer::explanation) ?: ""
                     val boundaryReason = if (sceneCuts.isNotEmpty() || audioEnergy.isNotEmpty()) {
                         " Boundaries checked against silence and scene-change signals."
                     } else ""
@@ -134,7 +147,7 @@ object HighlightDetector {
                         startMs = clipStart, endMs = clipEnd,
                         title = insight.suggestedTitle,
                         hook = text.take(180), score = combinedScore,
-                        reason = weights.explain(f) + audioReason + boundaryReason +
+                        reason = weights.explain(f) + audioReason + eventReason + boundaryReason +
                             " Category: " + insight.category + ". " + insight.note
                     )
                 }
