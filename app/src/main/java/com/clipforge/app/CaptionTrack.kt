@@ -4,13 +4,15 @@ package com.clipforge.app
 data class CaptionCue(
     val startMs: Long,
     val endMs: Long,
-    val text: String
+    val text: String,
+    val words: List<TimedWord> = emptyList()
 )
 
-enum class CaptionPreset(val label: String) {
+enum class CaptionPreset(val label: String, val animated: Boolean = false) {
     CLEAN("Clean"),
     BOLD("Bold"),
-    KARAOKE("Karaoke"),
+    KARAOKE("Karaoke", animated = true),
+    POP("Pop", animated = true),
     BOXED("Boxed")
 }
 
@@ -39,7 +41,12 @@ object CaptionTrack {
                 CaptionCue(
                     startMs = start - clipStartMs,
                     endMs = end - clipStartMs,
-                    text = wrapText(segment.text.trim(), maxCharactersPerCue)
+                    text = wrapText(segment.text.trim(), maxCharactersPerCue),
+                    words = segment.words.mapNotNull { word ->
+                        val a = maxOf(start, word.startMs)
+                        val b = minOf(end, word.endMs)
+                        if (b - a < 10L) null else TimedWord(a - clipStartMs, b - clipStartMs, word.word)
+                    }
                 )
             }
             .sortedBy { it.startMs }

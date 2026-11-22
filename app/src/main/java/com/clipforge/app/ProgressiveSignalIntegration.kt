@@ -26,7 +26,7 @@ internal object ProgressiveSignalIntegration {
         })
         val words = JSONArray()
         result.transcript.forEach {
-            words.put(JSONObject().put("startMs", it.startMs).put("endMs", it.endMs).put("text", it.text))
+            words.put(TranscriptSegmentJson.encode(it))
         }
         val energy = JSONArray()
         result.audioEnergy.forEach {
@@ -67,7 +67,7 @@ internal object ProgressiveSignalIntegration {
                 val a = item.getLong("startMs")
                 val b = item.getLong("endMs")
                 require(a >= start && b > a && b <= end)
-                transcript += TranscriptSegment(a, b, item.getString("text"))
+                transcript += TranscriptSegmentJson.decode(item)
             }
             val windows = data.getJSONArray("audioEnergy")
             for (i in 0 until windows.length()) {

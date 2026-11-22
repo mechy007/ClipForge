@@ -84,12 +84,7 @@ object VideoTranscriber {
                         val audio = if (count == chunk.size) chunk else chunk.copyOf(count)
                         val offsetMs = chunkIndex.toLong() * CHUNK_SECONDS * 1000L
                         val segments = WhisperEngine.transcribe16Khz(context, audio, language)
-                        checkpoint.save(chunkIndex, segments.map { segment ->
-                            segment.copy(
-                                startMs = segment.startMs + offsetMs,
-                                endMs = segment.endMs + offsetMs
-                            )
-                        })
+                        checkpoint.save(chunkIndex, segments.map { it.shiftedBy(offsetMs) })
                     } else onStatus("Restored transcription · part " + (chunkIndex + 1))
                     chunkIndex++
                 }
