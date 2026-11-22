@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="com.clipforge.app.BatchExportTestProvider"
+            android:authorities="com.clipforge.app.test.batch"
+            android:exported="true" />
+    </application>
+</manifest>

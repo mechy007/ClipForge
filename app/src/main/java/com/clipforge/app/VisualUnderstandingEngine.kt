@@ -1,0 +1,213 @@
+package com.clipforge.app
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Build
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+
+/** Built-in, offline visual activity analysis. No model download or network connection. */
+data class VisualActivity(
+    val timeMs: Long,
+    val motion: Float,
+    val sceneChange: Boolean,
+    val cameraMotion: Float = 0f,
+    val stableOverlay: Boolean = false,
+    val signature: Long? = null
+)
+data class VisualUnderstandingResult(val activity: List<VisualActivity>) {
+    val sceneCuts: List<Long> get() = activity.filter { it.sceneChange }.map { it.timeMs }
+    val highMotionMoments: List<Long> get() = activity.filter { it.motion >= 0.20f }.map { it.timeMs }
+}
+
+/**
+ * Lightweight frame-difference vision engine for gameplay and reaction footage.
+ * This is deterministic image analysis, not semantic object recognition.
+ * Frames are sampled and downscaled to keep memory bounded on 8 GB devices.
+ */
+object VisualUnderstandingEngine {
+    private const val WIDTH = VisualFrameSignals.WIDTH
+    private const val HEIGHT = VisualFrameSignals.HEIGHT
+
+    suspend fun analyze(context: Context, source: Uri, durationMs: Long): VisualUnderstandingResult =
+        withContext(Dispatchers.IO) {
+            if (durationMs <= 0L) return@withContext VisualUnderstandingResult(emptyList())
+            val retriever = MediaMetadataRetriever()
+            val events = mutableListOf<VisualActivity>()
+            var previous: FloatArray? = null
+            var current = FloatArray(WIDTH * HEIGHT)
+            val pixels = IntArray(current.size)
+            try {
+                retriever.setDataSource(context, source)
+                val step = (durationMs / 600L).coerceIn(1_000L, 7_500L)
+                var time = 0L
+                while (time < durationMs) {
+                    currentCoroutineContext().ensureActive()
+                    val frame = if (Build.VERSION.SDK_INT >= 27) {
+                        retriever.getScaledFrameAtTime(time * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST, WIDTH, HEIGHT)
+                    } else {
+                        retriever.getFrameAtTime(time * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST)
+                    }
+                    if (frame != null) {
+                        val small = Bitmap.createScaledBitmap(frame, WIDTH, HEIGHT, true)
+                        try {
+                            small.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
+                            for (i in pixels.indices) {
+                                val color = pixels[i]
+                                current[i] = ((color shr 16 and 255) * 0.2126f +
+                                    (color shr 8 and 255) * 0.7152f +
+                                    (color and 255) * 0.0722f) / 255f
+                            }
+                            events += VisualFrameSignals.compare(time, previous, current)
+                            val next = previous ?: FloatArray(current.size)
+                            previous = current
+                            current = next
+                        } finally {
+                            if (small !== frame) small.recycle()
+                            frame.recycle()
+                        }
+                    }
+                    time += step
+                }
+            } finally {
+                retriever.release()
+            }
+            VisualUnderstandingResult(events)
+        }
+}
+
+/** Conservative visual boost for transcript-ranked clips; does not fabricate highlights. */
+internal object VisualHighlightReranker {
+    fun rerank(clips: List<ClipCandidate>, signals: VisualUnderstandingResult): List<ClipCandidate> =
+        clips.map { clip ->
+            val samples = signals.activity.filter { it.timeMs >= clip.startMs && it.timeMs < clip.endMs }
+            if (samples.isEmpty()) clip else {
+                val meanMotion = samples.map { it.motion.coerceIn(0f, 1f) }.average().toFloat()
+                val bonus = (meanMotion * 25f).toInt().coerceIn(0, 8)
+                clip.copy(
+                    score = (clip.score + bonus).coerceAtMost(100),
+                    reason = if (bonus > 0) clip.reason + " Visual activity: +$bonus." else clip.reason
+                )
+            }
+        }.sortedByDescending { it.score }
+}
+
+/**
+ * Cross-modal reaction scoring. Visual motion by itself is ambiguous, so audio
+ * peaks only provide a small bonus when they coincide with a visual event.
+ * The existing audio-only and transcript scores remain authoritative.
+ */
+internal object ReactionSignalFusion {
+    fun rerank(
+        clips: List<ClipCandidate>,
+        visual: VisualUnderstandingResult,
+        audio: List<AudioEnergyWindow>
+    ): List<ClipCandidate> {
+        val reference = AudioSignalScorer.reference(audio) ?: return clips
+        val audioPeaks = audio.filter { it.peak.isFinite() && it.peak >= reference.peak * 0.75f }
+        return clips.map { clip ->
+            val events = visual.activity.filter {
+                it.timeMs >= clip.startMs && it.timeMs < clip.endMs &&
+                    (it.motion >= 0.12f || it.sceneChange)
+            }
+            val paired = events.count { event ->
+                audioPeaks.any { window ->
+                    window.startMs <= event.timeMs + 1_000L && window.endMs >= event.timeMs - 1_000L
+                }
+            }
+            val bonus = (paired * 2).coerceIn(0, 6)
+            if (bonus == 0) clip else clip.copy(
+                score = (clip.score + bonus).coerceAtMost(100),
+                reason = clip.reason + " Synchronized audio-visual reaction: +$bonus."
+            )
+        }.sortedByDescending { it.score }
+    }
+}
+
+/**
+ * Generates candidates even when Whisper finds no speech (for example silent
+ * gameplay). Peaks are selected by visual activity with non-overlapping windows.
+ */
+internal object VisualOnlyHighlightDetector {
+    fun detect(
+        signals: VisualUnderstandingResult,
+        durationMs: Long,
+        targetDurationMs: Long = 30_000L,
+        maxClips: Int = 10
+    ): List<ClipCandidate> {
+        if (durationMs < 8_000L || signals.activity.isEmpty()) return emptyList()
+        val window = targetDurationMs.coerceIn(8_000L, 60_000L).coerceAtMost(durationMs)
+        val step = (window / 3L).coerceAtLeast(1_000L)
+        val candidates = mutableListOf<Pair<ClipCandidate, Long?>>()
+        var start = 0L
+        while (start < durationMs) {
+            val end = minOf(durationMs, start + window)
+            if (end - start < 8_000L) break
+            val frames = signals.activity.filter { it.timeMs >= start && it.timeMs < end }
+            if (frames.isNotEmpty() && frames.any { it.motion >= 0.08f || it.sceneChange }) {
+                val mean = frames.map { it.motion.coerceIn(0f, 1f) }.average().toFloat()
+                val action = frames.maxBy { it.motion }
+                val changes = frames.count { it.sceneChange }
+                val overlays = frames.count { it.stableOverlay }
+                val cameraMotion = frames.count { it.cameraMotion >= 0.07f }
+                val overlayBonus = minOf(6, overlays * 2)
+                val score = (mean * 60f + action.motion * 30f + changes.coerceAtMost(3) * 3f +
+                    overlayBonus).toInt().coerceIn(0, 100)
+                val reason = buildString {
+                    append("Local motion and scene changes.")
+                    if (cameraMotion > 0) append(" Camera movement in $cameraMotion sampled frame(s).")
+                    if (overlays > 0) append(" Stable HUD-like edges during motion.")
+                }
+                candidates += ClipCandidate(start, end, "Visual highlight", "", score, reason) to action.signature
+            }
+            if (start >= durationMs - step) break
+            start += step
+        }
+        val chosen = mutableListOf<Pair<ClipCandidate, Long?>>()
+        for ((candidate, signature) in candidates.sortedByDescending { it.first.score }) {
+            if (chosen.size >= maxClips.coerceIn(1, 100)) break
+            if (chosen.none { (previous, hash) ->
+                    HighlightDetector.overlapOfShorter(candidate.startMs, candidate.endMs, previous.startMs, previous.endMs) > 0.65 ||
+                        (signature != null && hash != null && java.lang.Long.bitCount(signature xor hash) <= 4)
+                }) chosen += candidate to signature
+        }
+        return chosen.map { it.first }
+    }
+}
+
+/** Rank speech-based and visual-only candidates on the same source timeline. */
+internal fun rankVideoHighlights(
+    transcript: List<TranscriptSegment>,
+    energy: List<AudioEnergyWindow>,
+    visual: VisualUnderstandingResult,
+    durationMs: Long,
+    targetClipDurationMs: Long,
+    maxClips: Int,
+    preferences: CreatorClipPreferences = CreatorClipPreferences()
+): List<ClipCandidate> {
+    val speech = HighlightDetector.detect(transcript, durationMs, targetClipDurationMs, energy, visual.sceneCuts, maxClips)
+    val candidates = VisualHighlightReranker.rerank(speech, visual) +
+        VisualOnlyHighlightDetector.detect(visual, durationMs, targetClipDurationMs, maxClips)
+    val chosen = mutableListOf<ClipCandidate>()
+    val ranked = ReactionSignalFusion.rerank(candidates, visual, energy).map { clip ->
+        val formatted = if (clip.hook.isNotBlank()) {
+            val payoff = CreatorClipCuts.payoff(clip, transcript, energy, visual.activity)
+            val story = CreatorClipCuts.cut(clip, CreatorCut.FULL_CONTEXT, durationMs, transcript, payoff)
+            if (story.endMs - story.startMs >= 8_000L && story.endMs - story.startMs <= targetClipDurationMs + 3_000L) story else clip
+        } else clip
+        val adjustment = preferences.adjustment(formatted)
+        formatted.copy(score = (formatted.score + adjustment).coerceIn(0, 100),
+            reason = if (adjustment == 0) formatted.reason else formatted.reason + " Adjusted using your past clip reviews.")
+    }
+    for (clip in ranked.sortedByDescending { it.score }) {
+        if (chosen.size >= maxClips) break
+        if (chosen.none { existing ->
+                HighlightDetector.overlapOfShorter(existing.startMs, existing.endMs, clip.startMs, clip.endMs) > 0.65
+            }) chosen += clip
+    }
+    return chosen
+}

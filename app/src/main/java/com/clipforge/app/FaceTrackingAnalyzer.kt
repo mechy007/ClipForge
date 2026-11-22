@@ -4,10 +4,13 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.graphics.Bitmap
+import android.os.Build
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -18,7 +21,8 @@ object FaceTrackingAnalyzer {
         source: Uri,
         startMs: Long,
         endMs: Long,
-        targetAspectRatio: Float = 9f / 16f
+        targetAspectRatio: Float = 9f / 16f,
+        facecam: StreamRegion? = null
     ): List<CropFocus> = withContext(Dispatchers.IO) {
         require(startMs >= 0L && endMs > startMs) { "Choose a valid clip range." }
         val detector = FaceDetection.getClient(
@@ -42,10 +46,13 @@ object FaceTrackingAnalyzer {
             val step = maxOf(1_500L, duration / 120L)
             var offset = 0L
             while (offset < duration) {
-                val original = retriever.getFrameAtTime(
-                    (startMs + offset) * 1_000L,
-                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                )
+                currentCoroutineContext().ensureActive()
+                val timeUs = (startMs + offset) * 1_000L
+                val original = if (Build.VERSION.SDK_INT >= 27) {
+                    retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST, 640, 640)
+                } else {
+                    retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                }
                 if (original != null) {
                     val scale = minOf(1f, 640f / maxOf(original.width, original.height))
                     val frame = if (scale < 1f) Bitmap.createScaledBitmap(
@@ -54,7 +61,12 @@ object FaceTrackingAnalyzer {
                     ) else original
                     try {
                         val faces = Tasks.await(detector.process(InputImage.fromBitmap(frame, 0)))
-                        val primary = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
+                        val primary = faces.asSequence().filter { face ->
+                            facecam == null || (
+                                face.boundingBox.exactCenterX() / frame.width in facecam.left..facecam.right &&
+                                face.boundingBox.exactCenterY() / frame.height in facecam.top..facecam.bottom
+                            )
+                        }.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
                         if (primary != null) {
                             val box = primary.boundingBox
                             val w = frame.width.toFloat()
@@ -79,6 +91,16 @@ object FaceTrackingAnalyzer {
             retriever.release()
             detector.close()
         }
-        FaceTrackingPlanner.plan(observations, targetAspectRatio, sourceAspectRatio = sourceAspect)
+        if (facecam == null) {
+            FaceTrackingPlanner.plan(observations, targetAspectRatio, sourceAspectRatio = sourceAspect)
+        } else {
+            var x = (facecam.left + facecam.right) / 2
+            var y = (facecam.top + facecam.bottom) / 2
+            observations.takeIf { it.size >= 2 }.orEmpty().map { observation ->
+                x += (observation.face.centerX - x) * .35f
+                y += (observation.face.centerY - y) * .35f
+                CropFocus(observation.timeMs, x, y, facecam.width, facecam.height)
+            }
+        }
     }
 }

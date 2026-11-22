@@ -25,7 +25,7 @@ internal object ProgressiveOfflineTranscription {
         checkpoint: ProgressiveSegmentCheckpoint,
         language: String? = null,
         onStatus: (String) -> Unit = {},
-        onSegmentTranscribed: suspend (ProgressiveTranscriptionSignals) -> Unit
+        onSegmentTranscribed: suspend (FinalizedMediaSegment, ProgressiveTranscriptionSignals) -> Unit
     ) {
         ProgressiveMediaPipeline.run(source, checkpoint) { finalized ->
             val span = finalized.segment
@@ -35,27 +35,27 @@ internal object ProgressiveOfflineTranscription {
                 language,
                 onStatus
             )
-            val transcript = result.segments.map { item ->
-                require(item.startMs >= 0 && item.endMs > item.startMs && item.endMs <= span.endMs - span.startMs) {
-                    "Transcript timestamps outside finalized segment"
+            val durationMs = span.endMs - span.startMs
+            // Encoders can round the last frame or AAC packet past the requested cut.
+            // Keep that padding outside the next segment's source timeline.
+            fun endInsideSegment(startMs: Long, endMs: Long): Long {
+                require(startMs >= 0L && endMs >= startMs && endMs - durationMs <= 350L) {
+                    "Transcription signals fall outside the finalized segment"
                 }
-                item.copy(
-                    startMs = Math.addExact(item.startMs, span.startMs),
-                    endMs = Math.addExact(item.endMs, span.startMs)
-                )
+                return minOf(endMs, durationMs)
+            }
+            val transcript = result.segments.mapNotNull { item ->
+                val end = endInsideSegment(item.startMs, item.endMs)
+                if (end <= item.startMs) null else item.moveToSource(span.startMs, end)
             }
             val energy = result.audioEnergy.mapNotNull { item ->
-                // PCM extraction may emit a sub-millisecond tail rounded to zero duration.
-                if (item.startMs == item.endMs && item.startMs >= 0 && item.startMs <= span.endMs - span.startMs) return@mapNotNull null
-                require(item.startMs >= 0 && item.endMs > item.startMs && item.endMs <= span.endMs - span.startMs) {
-                    "Audio energy timestamps outside finalized segment"
-                }
-                item.copy(
+                val end = endInsideSegment(item.startMs, item.endMs)
+                if (end <= item.startMs) null else item.copy(
                     startMs = Math.addExact(item.startMs, span.startMs),
-                    endMs = Math.addExact(item.endMs, span.startMs)
+                    endMs = Math.addExact(end, span.startMs)
                 )
             }
-            onSegmentTranscribed(ProgressiveTranscriptionSignals(span, transcript, energy))
+            onSegmentTranscribed(finalized, ProgressiveTranscriptionSignals(span, transcript, energy))
         }
     }
 }

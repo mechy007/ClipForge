@@ -1,0 +1,5 @@
+Real speech fixture for Android offline transcription tests.
+Excerpt of John F. Kennedy's January 20, 1961 inaugural address. Public domain in the United States.
+Recording provenance: https://commons.wikimedia.org/wiki/File:JFK_inaugural_address.ogg
+Source excerpt: https://github.com/ggml-org/whisper.cpp/blob/v1.9.5/samples/jfk.wav
+ClipForge placed the audio over a solid background and encoded it as a small MP4 for Android tests.

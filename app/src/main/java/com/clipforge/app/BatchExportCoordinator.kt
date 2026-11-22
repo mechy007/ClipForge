@@ -2,6 +2,7 @@ package com.clipforge.app
 
 import android.content.Context
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,95 +18,94 @@ data class BatchExportStatus(
     val sourceUri: String? = null,
     val folderUri: String? = null,
     val aspectRatio: Float = 9f / 16f,
-    val completedClips: List<ClipCandidate> = emptyList()
+    val completedClips: List<ClipCandidate> = emptyList(),
+    val retryAvailable: Boolean = false
 )
 
 /**
  * Process-scoped coordinator keeps a batch alive across Activity/Compose recreation.
- * It intentionally does not claim to survive Android process death.
+ * A restarted batch uses saved document URIs when the source exposes a stable revision.
  */
 object BatchExportCoordinator {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableStatus = MutableStateFlow(BatchExportStatus())
     val status = mutableStatus.asStateFlow()
-    // Retain verified outputs across changed selections during an interrupted batch.
-    // This is process-local, just like the coordinator's status.
-    private val verifiedBatchClips = linkedSetOf<ClipCandidate>()
 
     fun start(
         context: Context, folder: Uri, source: Uri, clips: List<ClipCandidate>,
         aspectRatio: Float = 9f / 16f,
         transcript: List<TranscriptSegment> = emptyList(),
         captionPreset: CaptionPreset = CaptionPreset.CLEAN,
-        faceTrackingPath: List<CropFocus> = emptyList()
+        faceTrackingPath: List<CropFocus> = emptyList(),
+        splitFacecamRegion: StreamRegion? = null,
+        gameplayRegion: StreamRegion? = null,
+        gameplayTracking: List<CropFocus> = emptyList()
     ) {
         val previous = mutableStatus.value
         if (previous.running) return
 
-        val retryingInterruptedBatch = previous.message.startsWith("Batch export stopped:")
-        val sameBatch = retryingInterruptedBatch &&
-            previous.sourceUri == source.toString() &&
-            previous.folderUri == folder.toString() && previous.aspectRatio == aspectRatio
-        // A retry may use a different selection: only count previously exported clips
-        // that are still selected, and never count a duplicate more than once.
-        val selectedClips = clips.distinct()
-        if (!sameBatch) verifiedBatchClips.clear()
-        val alreadyCompleted = if (sameBatch) verifiedBatchClips.filter { it in selectedClips } else emptyList()
-        val remaining = selectedClips.filterNot { it in alreadyCompleted }
-        if (remaining.isEmpty()) {
-            mutableStatus.value = previous.copy(
-                running = false,
-                completed = alreadyCompleted.size,
-                completedClips = alreadyCompleted,
-                total = selectedClips.size,
-                message = if (alreadyCompleted.isEmpty()) "No highlights were selected."
-                    else "All selected clips have already been exported and verified."
-            )
+        val selectedClips = clips.toList()
+        if (selectedClips.isEmpty()) return
+        if (selectedClips.size > BatchClipExporter.MAX_CLIPS_PER_BATCH) {
+            mutableStatus.value = previous.copy(message = "Select up to ${BatchClipExporter.MAX_CLIPS_PER_BATCH} clips per batch.")
+            return
+        }
+        if (selectedClips.any { it.startMs < 0L || it.endMs <= it.startMs }) {
+            mutableStatus.value = previous.copy(message = "Selected clips must have valid start and end times.")
+            return
+        }
+        if (selectedClips.distinctBy { it.startMs to it.endMs }.size != selectedClips.size) {
+            mutableStatus.value = previous.copy(message = "Select only one clip for each start and end time.")
             return
         }
 
         mutableStatus.value = BatchExportStatus(
             running = true,
-            completed = alreadyCompleted.size,
             total = selectedClips.size,
-            message = if (alreadyCompleted.isNotEmpty()) "Resuming export · ${remaining.size} clip(s) remaining…" else "Exporting ${remaining.size} selected clip(s)…",
+            message = "Checking and exporting ${selectedClips.size} selected clip(s)…",
             sourceUri = source.toString(),
             folderUri = folder.toString(),
-            aspectRatio = aspectRatio,
-            completedClips = alreadyCompleted
+            aspectRatio = aspectRatio
         )
         val appContext = context.applicationContext
         scope.launch {
             try {
-                BatchClipExporter.exportAll(appContext, folder, source, remaining, aspectRatio, transcript, captionPreset, faceTrackingPath) { done, _, clip ->
-                    verifiedBatchClips.addAll(remaining.take(done))
-                    val verifiedClips = selectedClips.filter { it in verifiedBatchClips }
+                val verifiedClips = mutableListOf<ClipCandidate>()
+                BatchClipExporter.exportAll(appContext, folder, source, selectedClips, aspectRatio, transcript, captionPreset, faceTrackingPath, splitFacecamRegion, gameplayRegion, gameplayTracking) { done, _, clip ->
+                    verifiedClips += clip
                     mutableStatus.value = BatchExportStatus(
                         running = true,
-                        completed = verifiedClips.size,
+                        completed = done,
                         total = selectedClips.size,
                         message = "Exporting ${verifiedClips.size} / ${selectedClips.size} · ${clip.title}",
                         sourceUri = source.toString(),
                         folderUri = folder.toString(),
                         aspectRatio = aspectRatio,
-                        completedClips = verifiedClips
+                        completedClips = verifiedClips.toList()
                     )
                 }
-                val completedClips = alreadyCompleted + remaining
                 mutableStatus.value = BatchExportStatus(
                     running = false,
-                    completed = completedClips.size,
+                    completed = verifiedClips.size,
                     total = selectedClips.size,
-                    message = "Batch export complete · ${completedClips.size} clips saved and verified. Source video kept for safety.",
+                    message = "Batch export complete · ${verifiedClips.size} clips saved and verified. Source video kept for safety.",
                     sourceUri = source.toString(),
                     folderUri = folder.toString(),
                     aspectRatio = aspectRatio,
-                    completedClips = completedClips
+                    completedClips = verifiedClips.toList()
                 )
+            } catch (cancelled: CancellationException) {
+                mutableStatus.value = mutableStatus.value.copy(
+                    running = false,
+                    retryAvailable = true,
+                    message = "Batch export interrupted. Previously verified clips can be reused on retry."
+                )
+                throw cancelled
             } catch (error: Exception) {
                 mutableStatus.value = mutableStatus.value.copy(
                     running = false,
-                    message = "Batch export stopped: ${error.localizedMessage ?: "unknown error"}. ${mutableStatus.value.completed} clip(s) are verified; retry to continue with the remaining clips."
+                    retryAvailable = true,
+                    message = "${mutableStatus.value.completed}/${selectedClips.size} clips saved and verified. ${error.localizedMessage ?: "Export failed."}"
                 )
             }
         }

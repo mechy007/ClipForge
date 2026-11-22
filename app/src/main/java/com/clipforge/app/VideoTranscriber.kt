@@ -2,6 +2,8 @@ package com.clipforge.app
 
 import android.content.Context
 import android.net.Uri
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -40,8 +42,24 @@ object VideoTranscriber {
         onStatus: (String) -> Unit = {}
     ): TranscriptionResult = withContext(Dispatchers.IO) {
         val pcmFile = File(context.cacheDir, "clipforge-audio-" + System.nanoTime() + ".pcm")
-        var whisperSessionStarted = false
         try {
+            // Silent gameplay and screen recordings are valid inputs. Avoid loading
+            // Whisper or failing the entire visual pipeline when no audio exists.
+            val hasAudio = MediaExtractor().let { extractor ->
+                try {
+                    extractor.setDataSource(context, videoUri, null)
+                    (0 until extractor.trackCount).any { index ->
+                        extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+                            ?.startsWith("audio/") == true
+                    }
+                } finally {
+                    extractor.release()
+                }
+            }
+            if (!hasAudio) {
+                onStatus("No audio track; continuing with offline visual highlights…")
+                return@withContext TranscriptionResult(emptyList(), emptyList())
+            }
             onStatus("Preparing the bundled offline speech model…")
             WhisperModelManager.ensureModel(context) { _, _ -> }
             onStatus("Decoding video audio on this device…")
@@ -54,56 +72,46 @@ object VideoTranscriber {
                 "Decoded audio is empty or contains an incomplete PCM sample"
             }
 
-            WhisperEngine.beginSession(context)
-            whisperSessionStarted = true
-            onStatus("Starting on-device transcription…")
+            WhisperEngine.withSession(context) {
+                onStatus("Starting on-device transcription…")
 
-            val checkpoint = TranscriptCheckpoint.forVideo(context, videoUri, language)
-            onStatus("Resuming any previously completed transcription chunks…")
-            DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
-                val chunk = FloatArray(CHUNK_SAMPLES)
-                var chunkIndex = 0
+                val checkpoint = TranscriptCheckpoint.forVideo(context, videoUri, language)
+                onStatus("Resuming any previously completed transcription chunks…")
+                DataInputStream(BufferedInputStream(pcmFile.inputStream())).use { input ->
+                    val chunk = FloatArray(CHUNK_SAMPLES)
+                    var chunkIndex = 0
 
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    var count = 0
-                    while (count < chunk.size) {
-                        try {
-                            chunk[count] = input.readFloat()
-                            count++
-                        } catch (_: EOFException) {
-                            break
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        var count = 0
+                        while (count < chunk.size) {
+                            try {
+                                chunk[count] = input.readFloat()
+                                count++
+                            } catch (_: EOFException) {
+                                break
+                            }
                         }
+                        if (count == 0) break
+
+                        if (!checkpoint.hasChunk(chunkIndex)) {
+                            onStatus("Transcribing audio · part " + (chunkIndex + 1))
+                            val audio = if (count == chunk.size) chunk else chunk.copyOf(count)
+                            val offsetMs = chunkIndex.toLong() * CHUNK_SECONDS * 1000L
+                            val segments = WhisperEngine.transcribe16Khz(context, audio, language)
+                            checkpoint.save(chunkIndex, segments.map { it.moveToSource(offsetMs) })
+                        } else onStatus("Restored transcription · part " + (chunkIndex + 1))
+                        chunkIndex++
                     }
-                    if (count == 0) break
-
-                    if (!checkpoint.hasChunk(chunkIndex)) {
-                        onStatus("Transcribing audio · part " + (chunkIndex + 1))
-                        val audio = if (count == chunk.size) chunk else chunk.copyOf(count)
-                        val offsetMs = chunkIndex.toLong() * CHUNK_SECONDS * 1000L
-                        val segments = WhisperEngine.transcribe16Khz(context, audio, language)
-                        checkpoint.save(chunkIndex, segments.map { segment ->
-                            segment.copy(
-                                startMs = segment.startMs + offsetMs,
-                                endMs = segment.endMs + offsetMs
-                            )
-                        })
-                    } else onStatus("Restored transcription · part " + (chunkIndex + 1))
-                    chunkIndex++
                 }
-            }
 
-            TranscriptionResult(
-                segments = checkpoint.segments(),
-                audioEnergy = audioEnergy
-            )
-        } finally {
-            try {
-                if (whisperSessionStarted) WhisperEngine.endSession()
-            } finally {
-                // Clean up large decoded audio even if native session teardown throws.
-                pcmFile.delete()
+                TranscriptionResult(
+                    segments = checkpoint.segments(),
+                    audioEnergy = audioEnergy
+                )
             }
+        } finally {
+            pcmFile.delete()
         }
     }
 }

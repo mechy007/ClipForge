@@ -49,8 +49,8 @@ object FaceTrackingPlanner {
             cropWidth = 1f
             cropHeight = sourceAspectRatio / targetAspectRatio
         }
-        var x = valid.first().face.centerX
-        var y = (valid.first().face.centerY - 0.08f).coerceIn(0f, 1f)
+        var x = valid.first().face.centerX.coerceIn(cropWidth / 2f, 1f - cropWidth / 2f)
+        var y = (valid.first().face.centerY - 0.08f).coerceIn(cropHeight / 2f, 1f - cropHeight / 2f)
         return valid.map { observation ->
             val desiredX = observation.face.centerX.coerceIn(cropWidth / 2f, 1f - cropWidth / 2f)
             val desiredY = (observation.face.centerY - 0.08f).coerceIn(cropHeight / 2f, 1f - cropHeight / 2f)

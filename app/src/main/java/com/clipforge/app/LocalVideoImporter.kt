@@ -21,7 +21,7 @@ object LocalVideoImporter {
     suspend fun import(
         context: Context,
         source: Uri,
-        onProgress: (LocalImportProgress) -> Unit = {}
+        onProgress: suspend (LocalImportProgress) -> Unit = {}
     ): Uri = withContext(Dispatchers.IO) {
         require(source.scheme == "content") { "Choose a local video using the Android file picker." }
         val resolver = context.contentResolver
@@ -74,7 +74,11 @@ object LocalVideoImporter {
                     if (size != null) check(copied == size) { "Incomplete video import." }
                 }
             }
+            // Cancellation may arrive while closing/flushing the output stream.
+            // Do not publish a completed import after its worker was stopped.
+            currentCoroutineContext().ensureActive()
             check(partial.renameTo(target)) { "Could not finalize imported video." }
+            currentCoroutineContext().ensureActive()
             Uri.fromFile(target)
         } catch (error: Throwable) {
             partial.delete()

@@ -46,6 +46,20 @@ object CaptionTrack {
             .toList()
     }
 
+    /** Returns clip-relative timing only if all speech in the clip has aligned words. */
+    fun alignedWords(transcript: List<TranscriptSegment>, startMs: Long, endMs: Long): List<TimedWord> {
+        val clipped = transcript.filter { it.startMs < endMs && it.endMs > startMs && it.text.isNotBlank() }
+        if (clipped.any { it.words.isEmpty() }) return emptyList()
+        val words = clipped.flatMap { segment ->
+            segment.words.mapNotNull { word ->
+                val start = maxOf(startMs, word.startMs)
+                val end = minOf(endMs, word.endMs)
+                if (end <= start) null else word.copy(startMs = start - startMs, endMs = end - startMs)
+            }
+        }.sortedBy { it.startMs }
+        return words.takeIf { it.zipWithNext().all { (a, b) -> a.endMs <= b.startMs } }.orEmpty()
+    }
+
     fun toSrt(cues: List<CaptionCue>): String = buildString {
         cues.filter { it.endMs > it.startMs && it.text.isNotBlank() }
             .sortedBy { it.startMs }

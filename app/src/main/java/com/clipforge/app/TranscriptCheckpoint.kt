@@ -35,7 +35,7 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
                     val start = item.getLong("startMs")
                     val end = item.getLong("endMs")
                     require(start >= 0L && end > start) { "Invalid checkpoint segment timestamps" }
-                    TranscriptSegment(start, end, item.getString("text"))
+                    TranscriptSegment(start, end, item.getString("text"), item.optJSONArray("words").readWordTimings(start, end))
                 }
             }
         }.onFailure { chunks.clear() }
@@ -59,7 +59,8 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
         chunks.forEach { (chunkIndex, items) ->
             val segmentRows = JSONArray()
             items.forEach { item ->
-                segmentRows.put(JSONObject().put("startMs", item.startMs).put("endMs", item.endMs).put("text", item.text))
+                segmentRows.put(JSONObject().put("startMs", item.startMs).put("endMs", item.endMs).put("text", item.text)
+                    .put("words", item.words.toWordJson()))
             }
             rows.put(JSONObject().put("index", chunkIndex).put("segments", segmentRows))
         }
