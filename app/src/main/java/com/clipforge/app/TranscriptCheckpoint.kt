@@ -35,7 +35,7 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
                     val start = item.getLong("startMs")
                     val end = item.getLong("endMs")
                     require(start >= 0L && end > start) { "Invalid checkpoint segment timestamps" }
-                    TranscriptSegment(start, end, item.getString("text"))
+                    TranscriptSegmentJson.decode(item)
                 }
             }
         }.onFailure { chunks.clear() }
@@ -59,7 +59,7 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
         chunks.forEach { (chunkIndex, items) ->
             val segmentRows = JSONArray()
             items.forEach { item ->
-                segmentRows.put(JSONObject().put("startMs", item.startMs).put("endMs", item.endMs).put("text", item.text))
+                segmentRows.put(TranscriptSegmentJson.encode(item))
             }
             rows.put(JSONObject().put("index", chunkIndex).put("segments", segmentRows))
         }
@@ -119,7 +119,7 @@ internal class TranscriptCheckpoint(private val file: File, private val fingerpr
                     }
                 }.getOrNull() ?: "unknown|unknown"
             }
-            val identity = "${uri}|${language.orEmpty()}|$metadata|whisper-tiny-v1"
+            val identity = "${uri}|${language.orEmpty()}|$metadata|whisper-tiny-v2"
             val digest = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
                 .joinToString("") { "%02x".format(it) }
             return TranscriptCheckpoint(File(context.filesDir, "transcript-checkpoints/$digest.json"), identity).load()

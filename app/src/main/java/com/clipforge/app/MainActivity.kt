@@ -39,6 +39,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1090,7 +1093,13 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                     retryKey = previewRetryKey,
                                     aspectRatio = exportAspectRatio,
                                     startAtMs = clip.startMs,
-                                    endAtMs = clip.endMs
+                                    endAtMs = clip.endMs,
+                                    animatedCaptionCues = remember(burnCaptions, captionPreset, transcriptSegments, clip.startMs, clip.endMs) {
+                                        if (burnCaptions && CaptionPreset.valueOf(captionPreset).animated) {
+                                            CaptionTrack.fromTranscript(transcriptSegments, clip.startMs, clip.endMs)
+                                        } else emptyList()
+                                    },
+                                    previewCaptionPreset = CaptionPreset.valueOf(captionPreset)
                                 )
                                 Text(clip.hook, color = Muted, fontSize = 11.sp, maxLines = 4)
                             }
@@ -1160,7 +1169,9 @@ private fun VideoPreview(
     retryKey: Int,
     aspectRatio: Float = 9f / 16f,
     startAtMs: Long? = null,
-    endAtMs: Long? = null
+    endAtMs: Long? = null,
+    animatedCaptionCues: List<CaptionCue> = emptyList(),
+    previewCaptionPreset: CaptionPreset = CaptionPreset.CLEAN
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember(uri, retryKey, startAtMs, endAtMs) {
@@ -1194,7 +1205,8 @@ private fun VideoPreview(
             player.release()
         }
     }
-    LaunchedEffect(player) {
+    val captionFrames = remember(animatedCaptionCues) { AssKaraokeTrack.frames(animatedCaptionCues) }
+    LaunchedEffect(player, captionFrames.isNotEmpty()) {
         while (true) {
             if (!isSeeking) positionMs = player.currentPosition.coerceAtLeast(0L)
             if (player.duration > 0L) durationMs = player.duration
@@ -1202,7 +1214,7 @@ private fun VideoPreview(
                 player.pause()
                 player.seekTo(endAtMs.coerceIn(0L, durationMs.coerceAtLeast(0L)))
             }
-            delay(300L)
+            delay(if (captionFrames.isNotEmpty() && player.isPlaying) 33L else 150L)
         }
     }
 
@@ -1212,14 +1224,48 @@ private fun VideoPreview(
             aspectRatio == 1f -> 260.dp
             else -> 520.dp
         }
-        AndroidView(
-            factory = { PlayerView(it).apply {
-                this.player = player
-                useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            } },
-            modifier = Modifier.widthIn(max = previewMaxWidth).aspectRatio(aspectRatio)
-        )
+        BoxWithConstraints(Modifier.widthIn(max = previewMaxWidth).aspectRatio(aspectRatio)) {
+            AndroidView(
+                factory = { PlayerView(it).apply {
+                    this.player = player
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                } },
+                modifier = Modifier.fillMaxSize()
+            )
+            val relativePosition = positionMs - (startAtMs ?: 0L)
+            val frame = captionFrames.lastOrNull { relativePosition >= it.startMs && relativePosition < it.endMs }
+            if (frame != null) {
+                val verticalMargin = maxHeight * if (aspectRatio < 1f) 0.20f else 0.10f
+                val pop = previewCaptionPreset == CaptionPreset.POP
+                val fontSize = (minOf(maxWidth, maxHeight).value * 0.055f).coerceAtLeast(8f)
+                val popDuration = minOf(AssKaraokeTrack.POP_DURATION_MS, frame.endMs - frame.startMs)
+                val progress = ((relativePosition - frame.startMs).toFloat() / popDuration).coerceIn(0f, 1f)
+                val caption = buildAnnotatedString {
+                    frame.words.forEachIndexed { index, word ->
+                        if (index > 0) append(' ')
+                        if (frame.activeIndex == index) {
+                            withStyle(SpanStyle(
+                                color = if (pop) Color(0xFF57FF6A) else Color(0xFFFFD21F),
+                                fontSize = (fontSize * if (pop) 1f + 0.16f * (1f - progress) else 1f).sp
+                            )) { append(word) }
+                        } else append(word)
+                    }
+                }
+                Text(
+                    caption,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .padding(start = maxWidth * 0.08f, end = maxWidth * 0.08f, bottom = verticalMargin),
+                    color = Color.White,
+                    fontSize = fontSize.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    style = LocalTextStyle.current.copy(shadow = androidx.compose.ui.graphics.Shadow(
+                        color = Color.Black, blurRadius = 4f
+                    ))
+                )
+            }
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
             IconButton(onClick = { player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L)) }) {
                 Icon(Icons.Default.Replay10, contentDescription = "Rewind 10 seconds", tint = Color.White)

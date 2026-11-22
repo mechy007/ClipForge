@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import org.json.JSONArray
 
 data class SavedProject(val id: Long, val title: String, val sourceUri: String, val durationMs: Long, val status: String, val updatedAt: Long)
 data class SavedHighlight(val id: Long, val projectId: Long, val startMs: Long, val endMs: Long, val title: String, val transcript: String, val score: Int, val exportedUri: String?, val reason: String, val reviewStatus: String = "PENDING")
@@ -11,12 +12,13 @@ data class SavedLiveSession(val id: Long, val videoId: String, val title: String
 data class SavedLiveMarker(val id: Long, val sessionId: Long, val startMs: Long, val messageCount: Int, val baselineMedian: Double, val reason: String)
 
 /** Local SQLite persistence. Media files remain outside the database. */
-class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationContext, "clipforge_projects.db", null, 7) {
+class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationContext, "clipforge_projects.db", null, 8) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, source_uri TEXT NOT NULL, duration_ms INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'draft', updated_at INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE highlights (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, end_ms INTEGER NOT NULL, title TEXT NOT NULL, transcript TEXT NOT NULL, score INTEGER NOT NULL, exported_uri TEXT, reason TEXT NOT NULL DEFAULT '', review_status TEXT NOT NULL DEFAULT 'PENDING')")
         db.execSQL("CREATE INDEX highlights_project_idx ON highlights(project_id)")
         createTranscriptTable(db)
+        addTranscriptWordTiming(db)
         createLiveTables(db)
     }
     override fun onConfigure(db: SQLiteDatabase) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true) }
@@ -36,12 +38,17 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
         if (oldVersion < 7) {
             db.execSQL("ALTER TABLE highlights ADD COLUMN review_status TEXT NOT NULL DEFAULT 'PENDING'")
         }
+        if (oldVersion < 8) addTranscriptWordTiming(db)
     }
 
     private fun createLiveTables(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS live_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, video_id TEXT NOT NULL, title TEXT NOT NULL, broadcast_start_ms INTEGER NOT NULL, monitoring_started_at_ms INTEGER NOT NULL, recording_start_ms INTEGER NOT NULL DEFAULT 0, recording_offset_ms INTEGER NOT NULL DEFAULT 0, recording_path TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS live_markers (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL REFERENCES live_sessions(id) ON DELETE CASCADE, start_ms INTEGER NOT NULL, message_count INTEGER NOT NULL, baseline_median REAL NOT NULL, reason TEXT NOT NULL)")
         db.execSQL("CREATE INDEX IF NOT EXISTS live_markers_session_idx ON live_markers(session_id, start_ms)")
+    }
+
+    private fun addTranscriptWordTiming(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE transcript_segments ADD COLUMN words_json TEXT NOT NULL DEFAULT '[]'")
     }
 
     private fun createTranscriptTable(db: SQLiteDatabase) {
@@ -82,6 +89,7 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
                     put("start_ms", segment.startMs)
                     put("end_ms", segment.endMs)
                     put("text", segment.text)
+                    put("words_json", TranscriptSegmentJson.encodeWords(segment.words).toString())
                 })
             }
             db.setTransactionSuccessful()
@@ -93,11 +101,14 @@ class ProjectDatabase(context: Context) : SQLiteOpenHelper(context.applicationCo
     fun listTranscript(projectId: Long): List<TranscriptSegment> {
         val rows = mutableListOf<TranscriptSegment>()
         readableDatabase.query(
-            "transcript_segments", arrayOf("start_ms", "end_ms", "text"),
+            "transcript_segments", arrayOf("start_ms", "end_ms", "text", "words_json"),
             "project_id=?", arrayOf(projectId.toString()), null, null, "start_ms ASC"
         ).use { cursor ->
             while (cursor.moveToNext()) {
-                rows += TranscriptSegment(cursor.getLong(0), cursor.getLong(1), cursor.getString(2))
+                val segment = TranscriptSegment(cursor.getLong(0), cursor.getLong(1), cursor.getString(2))
+                rows += runCatching {
+                    TranscriptSegmentJson.withWords(segment, JSONArray(cursor.getString(3)))
+                }.getOrDefault(segment)
             }
         }
         return rows

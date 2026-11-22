@@ -1,6 +1,7 @@
 package com.clipforge.app
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
@@ -16,21 +17,24 @@ object CaptionBurnIn {
         output: File,
         cues: List<CaptionCue>,
         preset: CaptionPreset = CaptionPreset.CLEAN,
-        alignedWords: List<TimedWord> = emptyList(),
-        clipDurationMs: Long = 0L,
         onFinished: (Boolean, String) -> Unit
     ) {
-        val wordAligned = alignedWords.isNotEmpty() && clipDurationMs > 0L
+        val wordAligned = preset.animated && cues.any { it.words.isNotEmpty() }
         val subtitle = File(context.cacheDir, "captions_${System.nanoTime()}.${if (wordAligned) "ass" else "srt"}")
         try {
             require(input.isFile && input.length() > 0L) { "Input video is missing or empty." }
-            require(cues.isNotEmpty() || wordAligned) { "There are no captions to burn in." }
-            subtitle.writeText(if (wordAligned) AssKaraokeTrack.render(alignedWords, clipDurationMs) else CaptionTrack.toSrt(cues), Charsets.UTF_8)
-            val style = when (preset) {
-                CaptionPreset.CLEAN -> "FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48"
-                CaptionPreset.BOLD -> "FontName=Arial,FontSize=22,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=52"
-                CaptionPreset.KARAOKE -> "FontName=Arial,FontSize=21,Bold=1,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Alignment=2,MarginV=52"
-                CaptionPreset.BOXED -> "FontName=Arial,FontSize=19,Bold=1,PrimaryColour=&H00FFFFFF,BackColour=&H90000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=48"
+            require(cues.isNotEmpty()) { "There are no captions to burn in." }
+            val style = if (wordAligned) {
+                val (width, height) = videoSize(input)
+                subtitle.writeText(AssKaraokeTrack.render(cues, preset, width, height), Charsets.UTF_8)
+                null
+            } else {
+                subtitle.writeText(CaptionTrack.toSrt(cues), Charsets.UTF_8)
+                when (preset) {
+                    CaptionPreset.CLEAN -> "FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=48"
+                    CaptionPreset.BOLD, CaptionPreset.KARAOKE, CaptionPreset.POP -> "FontName=Arial,FontSize=22,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=52"
+                    CaptionPreset.BOXED -> "FontName=Arial,FontSize=19,Bold=1,PrimaryColour=&H00FFFFFF,BackColour=&H90000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=48"
+                }
             }
             val arguments = buildArguments(input.absolutePath, subtitle.absolutePath, output.absolutePath, style)
             FFmpegKit.executeWithArgumentsAsync(arguments) { session ->
@@ -50,7 +54,23 @@ object CaptionBurnIn {
         }
     }
 
-    internal fun buildArguments(input: String, subtitle: String, output: String, style: String): Array<String> {
+    private fun videoSize(input: File): Pair<Int, Int> {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(input.absolutePath)
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            require(width != null && height != null && width > 0 && height > 0) {
+                "Could not read the rendered video size."
+            }
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull()
+            return if (rotation == 90 || rotation == 270) height to width else width to height
+        } finally {
+            retriever.release()
+        }
+    }
+
+    internal fun buildArguments(input: String, subtitle: String, output: String, style: String?): Array<String> {
         fun escape(value: String, specialCharacters: String) = buildString {
             for (character in value) {
                 if (character in specialCharacters) append('\\')
@@ -61,7 +81,8 @@ object CaptionBurnIn {
         // FFmpeg parses filtergraph separators, then parses each filter's options.
         fun filterOption(value: String) = escape(escape(value, "\\':"), "\\'[],;")
 
-        val filter = "subtitles=filename=${filterOption(subtitle)}:fontsdir=/system/fonts:force_style=${filterOption(style)}," +
+        val styleOption = style?.let { ":force_style=${filterOption(it)}" }.orEmpty()
+        val filter = "subtitles=filename=${filterOption(subtitle)}:fontsdir=/system/fonts$styleOption," +
             "pad=ceil(iw/2)*2:ceil(ih/2)*2"
         return arrayOf(
             "-y", "-loglevel", "error", "-i", input, "-vf", filter,
