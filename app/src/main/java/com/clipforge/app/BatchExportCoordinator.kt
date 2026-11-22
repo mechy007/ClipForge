@@ -2,6 +2,7 @@ package com.clipforge.app
 
 import android.content.Context
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +50,10 @@ object BatchExportCoordinator {
             mutableStatus.value = previous.copy(message = "Select up to ${BatchClipExporter.MAX_CLIPS_PER_BATCH} clips per batch.")
             return
         }
+        if (selectedClips.any { it.startMs < 0L || it.endMs <= it.startMs }) {
+            mutableStatus.value = previous.copy(message = "Selected clips must have valid start and end times.")
+            return
+        }
         if (selectedClips.distinctBy { it.startMs to it.endMs }.size != selectedClips.size) {
             mutableStatus.value = previous.copy(message = "Select only one clip for each start and end time.")
             return
@@ -89,6 +94,13 @@ object BatchExportCoordinator {
                     aspectRatio = aspectRatio,
                     completedClips = verifiedClips.toList()
                 )
+            } catch (cancelled: CancellationException) {
+                mutableStatus.value = mutableStatus.value.copy(
+                    running = false,
+                    retryAvailable = true,
+                    message = "Batch export interrupted. Previously verified clips can be reused on retry."
+                )
+                throw cancelled
             } catch (error: Exception) {
                 mutableStatus.value = mutableStatus.value.copy(
                     running = false,
