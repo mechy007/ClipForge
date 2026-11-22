@@ -53,11 +53,11 @@ class BackgroundVideoImportWorker(context: Context, params: WorkerParameters) : 
                     lastPercent = percent
                     lastReportedBytes = p.copiedBytes
                     lastReportAt = now
-                    setProgressAsync(Data.Builder()
+                    setProgress(Data.Builder()
                         .putInt(PROGRESS, percent)
                         .putLong(COPIED_BYTES, p.copiedBytes)
                         .build())
-                    setForegroundAsync(notification("Importing video", percent, p.copiedBytes))
+                    setForeground(notification("Importing video", percent, p.copiedBytes))
                 }
             }
             Result.success(Data.Builder().putString(RESULT_URI, imported.toString()).build())
