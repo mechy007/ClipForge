@@ -648,6 +648,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
             }
             if (liveMarkers.isNotEmpty()) {
                 Text("${liveMarkers.size} live highlight marker(s) collected", color = Muted, fontSize = 12.sp)
+                Text("ClipForge ranks chat spikes against their usual activity, removes near-duplicate moments, and prepares the strongest 10 for review.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
                 Button(
                     onClick = {
                         if (video == null || duration <= 0L) {
@@ -658,19 +659,11 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                                 video?.scheme == "file" && video?.path == liveSession.recordingPath
                             val recordingOffsetMs = if (recordingMatchesSession) liveSession?.recordingOffsetMs ?: 0L else 0L
                             val hasRecordingStart = recordingMatchesSession
-                            val candidates = liveMarkers.mapNotNull { marker ->
-                                val markerTimeMs = LiveMarkerTimeline.toRecordingTime(marker.startMs, recordingOffsetMs)
-                                    ?: return@mapNotNull null
-                                val clipStart = (markerTimeMs - 20_000L).coerceAtLeast(0L)
-                                val clipEnd = minOf(duration, markerTimeMs + 10_000L)
-                                if (clipEnd <= clipStart) null else ClipCandidate(
-                                    startMs = clipStart,
-                                    endMs = clipEnd,
-                                    title = "Live chat spike · ${time(markerTimeMs)}",
-                                    hook = "${marker.messageCount} chat messages · baseline median ${"%.1f".format(marker.baselineMedian)}",
-                                    score = 70
-                                )
-                            }
+                            val candidates = LiveMarkerClipPlanner.plan(
+                                markers = liveMarkers,
+                                recordingOffsetMs = recordingOffsetMs,
+                                durationMs = duration
+                            )
                             if (candidates.isEmpty()) {
                                 message = "No live markers fall inside this recording. Check that the recording starts with the broadcast and covers the marked times."
                             } else {
@@ -685,7 +678,7 @@ private fun ClipForgeHome(initialVideoUri: Uri? = null) {
                     },
                     enabled = video != null && duration > 0L && !analyzing,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Create clips from live markers") }
+                ) { Text("Create best clips from live markers") }
             }
 
             }
